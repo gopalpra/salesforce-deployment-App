@@ -1,0 +1,164 @@
+<template>
+    <lightning-card title="🌐 Environment Manager" icon-name="standard:connected_apps">
+
+        <div class="slds-m-around_medium">
+
+            <!-- ── CONNECT NEW ENVIRONMENT BOX ── -->
+            <div class="slds-box slds-m-bottom_medium" style="background:#f8f8f8; border:1px solid #dddbda;">
+                <div class="slds-grid slds-grid_vertical-align-center slds-m-bottom_medium">
+                    <lightning-icon icon-name="utility:connected_apps" size="small" class="slds-m-right_small"></lightning-icon>
+                    <h3 class="slds-text-heading_small">Connect a Salesforce Org</h3>
+                </div>
+
+                <div style="display:flex; flex-wrap:nowrap; gap:12px; align-items:flex-end;">
+
+                    <div style="width:220px; flex-shrink:0;">
+                        <lightning-input
+                            type="text"
+                            label="Environment Name"
+                            placeholder="e.g. UAT Sandbox"
+                            value={newEnvName}
+                            onchange={handleEnvNameChange}
+                            disabled={isConnecting}>
+                        </lightning-input>
+                    </div>
+
+                    <div style="width:180px; flex-shrink:0;">
+                        <lightning-combobox
+                            label="Org Type"
+                            value={newOrgType}
+                            options={orgTypeOptions}
+                            onchange={handleOrgTypeChange}
+                            disabled={isConnecting}>
+                        </lightning-combobox>
+                    </div>
+
+                    <div style="flex-shrink:0; padding-bottom:1px;">
+                        <lightning-button
+                            label="Connect to Salesforce"
+                            variant="brand"
+                            icon-name="utility:salesforce1"
+                            icon-position="left"
+                            onclick={initiateOAuth}
+                            disabled={isConnectDisabled}>
+                        </lightning-button>
+                    </div>
+
+                </div>
+
+                <!-- Connecting state -->
+                <template if:true={isConnecting}>
+                    <div class="slds-m-top_small slds-grid slds-grid_vertical-align-center" style="gap:8px;">
+                        <lightning-spinner alternative-text="Connecting..." size="small"
+                            style="position:relative; height:24px; width:24px;">
+                        </lightning-spinner>
+                        <span class="slds-text-body_small slds-text-color_weak">{connectingMessage}</span>
+                    </div>
+                </template>
+
+                <!-- Status message -->
+                <template if:true={connectStatusMessage}>
+                    <div class="slds-m-top_small">
+                        <p class={connectStatusClass}><strong>{connectStatusMessage}</strong></p>
+                    </div>
+                </template>
+
+            </div>
+
+            <!-- ── SAVED ENVIRONMENTS LIST ── -->
+            <template if:true={hasSavedEnvironments}>
+                <div class="slds-box" style="border:1px solid #dddbda;">
+                    <div class="slds-grid slds-grid_align-spread slds-m-bottom_small">
+                        <h3 class="slds-text-heading_small">
+                            Saved Environments &nbsp;
+                            <span class="slds-badge">{savedEnvironments.length}</span>
+                        </h3>
+                        <lightning-button
+                            label="Refresh"
+                            variant="neutral"
+                            icon-name="utility:refresh"
+                            icon-position="left"
+                            onclick={loadSavedEnvironments}>
+                        </lightning-button>
+                    </div>
+
+                    <!-- Table header -->
+                    <div class="slds-grid slds-text-title_caps slds-text-color_weak
+                                slds-m-bottom_x-small slds-p-bottom_x-small"
+                         style="border-bottom:1px solid #dddbda; font-size:11px;">
+                        <div class="slds-col slds-size_3-of-12">Environment Name</div>
+                        <div class="slds-col slds-size_3-of-12">Org Name</div>
+                        <div class="slds-col slds-size_2-of-12">Org Type</div>
+                        <div class="slds-col slds-size_2-of-12">Status</div>
+                        <div class="slds-col slds-size_2-of-12">Actions</div>
+                    </div>
+
+                    <!-- Table rows -->
+                    <template for:each={savedEnvironments} for:item="env">
+                        <div key={env.Id}
+                             class="slds-grid slds-grid_vertical-align-center slds-m-top_x-small"
+                             style="border-bottom:1px solid #f3f2f2; padding-bottom:6px;">
+
+                            <div class="slds-col slds-size_3-of-12 slds-truncate"
+                                 style="font-weight:500; font-size:13px;" title={env.Name}>
+                                {env.Name}
+                            </div>
+                            <div class="slds-col slds-size_3-of-12 slds-truncate slds-text-color_weak"
+                                 style="font-size:12px;" title={env.Org_Name__c}>
+                                {env.Org_Name__c}
+                            </div>
+                            <div class="slds-col slds-size_2-of-12" style="font-size:12px;">
+                                <span class={env.orgTypeBadgeClass}>{env.Org_Type__c}</span>
+                            </div>
+                            <div class="slds-col slds-size_2-of-12" style="font-size:12px;">
+                                <span class={env.statusBadgeClass}>{env.Connection_Status__c}</span>
+                            </div>
+                            <div class="slds-col slds-size_2-of-12">
+                                <lightning-button-group>
+                                    <lightning-button
+                                        label="Reconnect"
+                                        variant="neutral"
+                                        data-id={env.Id}
+                                        data-name={env.Name}
+                                        data-type={env.Org_Type__c}
+                                        onclick={reconnectEnvironment}>
+                                    </lightning-button>
+                                    <lightning-button
+                                        label="Delete"
+                                        variant="destructive-text"
+                                        data-id={env.Id}
+                                        onclick={deleteEnvironment}>
+                                    </lightning-button>
+                                </lightning-button-group>
+                            </div>
+
+                        </div>
+                    </template>
+
+                </div>
+            </template>
+
+            <!-- Empty state -->
+            <template if:false={hasSavedEnvironments}>
+                <template if:false={isLoadingEnvironments}>
+                    <div style="text-align:center; padding:2rem 0;">
+                        <lightning-icon icon-name="utility:connected_apps" size="large"></lightning-icon>
+                        <p class="slds-text-heading_small slds-m-top_small">No environments connected yet.</p>
+                        <p class="slds-text-body_small slds-text-color_weak">
+                            Use the form above to connect a Salesforce org via OAuth.
+                        </p>
+                    </div>
+                </template>
+            </template>
+
+            <!-- Loading spinner -->
+            <template if:true={isLoadingEnvironments}>
+                <div class="slds-m-top_medium" style="text-align:center;">
+                    <lightning-spinner alternative-text="Loading..." size="small"></lightning-spinner>
+                </div>
+            </template>
+
+        </div>
+
+    </lightning-card>
+</template>

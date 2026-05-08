@@ -1,0 +1,195 @@
+<template>
+    <lightning-card title="🐙 GitHub Manager" icon-name="standard:connected_apps">
+
+        <div class="slds-m-around_medium">
+
+            <!-- ── CONNECT NEW REPO BOX ── -->
+            <div class="slds-box slds-m-bottom_medium" style="background:#f8f8f8; border:1px solid #dddbda;">
+                <div class="slds-grid slds-grid_vertical-align-center slds-m-bottom_medium">
+                    <lightning-icon icon-name="utility:connected_apps" size="small" class="slds-m-right_small"></lightning-icon>
+                    <h3 class="slds-text-heading_small">Connect a GitHub Repository</h3>
+                </div>
+
+                <div style="display:flex; flex-wrap:nowrap; gap:12px; align-items:flex-end;">
+
+                    <div style="width:200px; flex-shrink:0;">
+                        <lightning-input
+                            type="text"
+                            label="Connection Name"
+                            placeholder="e.g. Main Deployment Repo"
+                            value={connectionName}
+                            onchange={handleConnectionNameChange}
+                            disabled={isConnecting}>
+                        </lightning-input>
+                    </div>
+
+                    <div style="width:160px; flex-shrink:0;">
+                        <lightning-input
+                            type="text"
+                            label="Repo Owner"
+                            placeholder="e.g. gopalpra"
+                            value={repoOwner}
+                            onchange={handleRepoOwnerChange}
+                            disabled={isConnecting}>
+                        </lightning-input>
+                    </div>
+
+                    <div style="width:200px; flex-shrink:0;">
+                        <lightning-input
+                            type="text"
+                            label="Repository Name"
+                            placeholder="e.g. salesforce-deployments"
+                            value={repoName}
+                            onchange={handleRepoNameChange}
+                            disabled={isConnecting}>
+                        </lightning-input>
+                    </div>
+
+                    <div style="flex-shrink:0; padding-bottom:1px;">
+                        <lightning-button
+                            label="Connect to GitHub"
+                            variant="brand"
+                            onclick={initiateOAuth}
+                            disabled={isConnectDisabled}>
+                        </lightning-button>
+                    </div>
+
+                </div>
+
+                <!-- Connecting state -->
+                <template if:true={isConnecting}>
+                    <div class="slds-m-top_small slds-grid slds-grid_vertical-align-center" style="gap:8px;">
+                        <lightning-spinner alternative-text="Connecting..." size="small"
+                            style="position:relative; height:24px; width:24px;">
+                        </lightning-spinner>
+                        <span class="slds-text-body_small slds-text-color_weak">{connectingMessage}</span>
+                    </div>
+                </template>
+
+                <!-- Status message -->
+                <template if:true={connectStatusMessage}>
+                    <div class="slds-m-top_small">
+                        <p class={connectStatusClass}><strong>{connectStatusMessage}</strong></p>
+                    </div>
+                </template>
+
+            </div>
+
+            <!-- ── SAVED CONNECTIONS LIST ── -->
+            <template if:true={hasConnections}>
+                <div class="slds-box" style="border:1px solid #dddbda;">
+                    <div class="slds-grid slds-grid_align-spread slds-m-bottom_small">
+                        <div class="slds-grid slds-grid_vertical-align-center">
+                            <lightning-icon icon-name="utility:connected_apps" size="small" class="slds-m-right_small"></lightning-icon>
+                            <h3 class="slds-text-heading_small">
+                                Saved Connections &nbsp;
+                                <span class="slds-badge">{savedConnections.length}</span>
+                            </h3>
+                        </div>
+                        <lightning-button
+                            label="Refresh"
+                            variant="neutral"
+                            icon-name="utility:refresh"
+                            icon-position="left"
+                            onclick={loadSavedConnections}>
+                        </lightning-button>
+                    </div>
+
+                    <!-- Table header -->
+                    <div class="slds-grid slds-text-title_caps slds-text-color_weak
+                                slds-m-bottom_x-small slds-p-bottom_x-small"
+                         style="border-bottom:1px solid #dddbda; font-size:11px;">
+                        <div class="slds-col slds-size_2-of-12">Connection Name</div>
+                        <div class="slds-col slds-size_2-of-12">GitHub User</div>
+                        <div class="slds-col slds-size_3-of-12">Repository</div>
+                        <div class="slds-col slds-size_2-of-12">Status</div>
+                        <div class="slds-col slds-size_1-of-12">Last Updated</div>
+                        <div class="slds-col slds-size_2-of-12">Actions</div>
+                    </div>
+
+                    <!-- Table rows -->
+                    <template for:each={savedConnections} for:item="conn">
+                        <div key={conn.Id}
+                             class="slds-grid slds-grid_vertical-align-center slds-m-top_x-small"
+                             style="border-bottom:1px solid #f3f2f2; padding-bottom:6px;">
+
+                            <div class="slds-col slds-size_2-of-12 slds-truncate"
+                                 style="font-weight:500; font-size:13px;" title={conn.Name}>
+                                {conn.Name}
+                            </div>
+
+                            <div class="slds-col slds-size_2-of-12 slds-truncate slds-text-color_weak"
+                                 style="font-size:12px;" title={conn.GitHub_Username__c}>
+                                {conn.GitHub_Username__c}
+                            </div>
+
+                            <div class="slds-col slds-size_3-of-12 slds-truncate slds-text-color_weak"
+                                 style="font-size:12px;" title={conn.repoFullName}>
+                                {conn.repoFullName}
+                            </div>
+
+                            <div class="slds-col slds-size_2-of-12" style="font-size:12px;">
+                                <span class={conn.statusBadgeClass}>{conn.Status__c}</span>
+                            </div>
+
+                            <div class="slds-col slds-size_1-of-12 slds-text-color_weak"
+                                 style="font-size:12px;">
+                                {conn.lastModifiedFormatted}
+                            </div>
+
+                            <div class="slds-col slds-size_2-of-12">
+                                <lightning-button-group>
+                                    <lightning-button
+                                        label="Verify"
+                                        variant="neutral"
+                                        data-id={conn.Id}
+                                        onclick={verifyConnection}>
+                                    </lightning-button>
+                                    <lightning-button
+                                        label="Reconnect"
+                                        variant="neutral"
+                                        data-id={conn.Id}
+                                        data-name={conn.Name}
+                                        data-owner={conn.Repo_Owner__c}
+                                        data-repo={conn.Repo_Name__c}
+                                        onclick={reconnectConnection}>
+                                    </lightning-button>
+                                    <lightning-button
+                                        label="Delete"
+                                        variant="destructive-text"
+                                        data-id={conn.Id}
+                                        onclick={deleteConnection}>
+                                    </lightning-button>
+                                </lightning-button-group>
+                            </div>
+
+                        </div>
+                    </template>
+
+                </div>
+            </template>
+
+            <!-- Empty state -->
+            <template if:false={hasConnections}>
+                <template if:false={isLoadingConnections}>
+                    <div style="text-align:center; padding:2rem 0;">
+                        <lightning-icon icon-name="utility:connected_apps" size="large"></lightning-icon>
+                        <p class="slds-text-heading_small slds-m-top_small">No repositories connected yet.</p>
+                        <p class="slds-text-body_small slds-text-color_weak">
+                            Use the form above to connect a GitHub repo via OAuth.
+                        </p>
+                    </div>
+                </template>
+            </template>
+
+            <!-- Loading spinner -->
+            <template if:true={isLoadingConnections}>
+                <div class="slds-m-top_medium" style="text-align:center;">
+                    <lightning-spinner alternative-text="Loading..." size="small"></lightning-spinner>
+                </div>
+            </template>
+
+        </div>
+
+    </lightning-card>
+</template>

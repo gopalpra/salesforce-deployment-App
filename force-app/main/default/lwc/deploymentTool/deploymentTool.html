@@ -1,0 +1,724 @@
+<template>
+    <lightning-card title="🚀 Deployment Tool" icon-name="standard:apex">
+
+        <div class={mainLayoutClass} style="position:relative;">
+
+            <div class={mainContentClass}>
+
+                <!-- Quick Load Actions Bar -->
+                <div class="slds-m-around_medium slds-grid slds-grid_align-spread slds-grid_vertical-align-center">
+                    <span class="slds-text-title_caps slds-text-color_weak">Quick Load Actions</span>
+                    <lightning-button label="Previously Committed" icon-name="utility:clock"
+                        icon-position="left" variant="neutral" onclick={togglePrevCommitPanel}>
+                    </lightning-button>
+                </div>
+
+                <!-- TAB BAR -->
+                <div class="slds-m-horizontal_medium">
+                    <div class="slds-tabs_default">
+                        <ul class="slds-tabs_default__nav" role="tablist">
+
+                            <li class={findChangesTabClass} title="Deploy" role="presentation">
+                                <a class="slds-tabs_default__link" role="tab"
+                                   onclick={handleTabSwitch} data-tab="findChanges" tabindex="0">
+                                    🚀 Deploy
+                                </a>
+                            </li>
+
+                            <li class={selectedChangesTabClass} title="Selected Changes" role="presentation">
+                                <a class="slds-tabs_default__link" role="tab"
+                                   onclick={handleTabSwitch} data-tab="selectedChanges" tabindex="-1">
+                                    Selected Changes
+                                    <template if:true={hasSelectedComponents}>
+                                        <span class="slds-badge slds-m-left_x-small">{selectedComponents.length}</span>
+                                    </template>
+                                </a>
+                            </li>
+
+                            <li class={deleteTabClass} title="Delete" role="presentation">
+                                <a class="slds-tabs_default__link" role="tab"
+                                   onclick={handleTabSwitch} data-tab="deleteTab" tabindex="-1"
+                                   style="color:#c23934;">
+                                    🗑️ Delete
+                                    <template if:true={hasDeleteComponents}>
+                                        <span class="slds-badge slds-m-left_x-small"
+                                              style="background:#c23934;color:#fff;">{deleteComponents.length}</span>
+                                    </template>
+                                </a>
+                            </li>
+
+                            <li class={environmentsTabClass} title="Environments" role="presentation">
+                                <a class="slds-tabs_default__link" role="tab"
+                                   onclick={handleTabSwitch} data-tab="environments" tabindex="-1">
+                                    🌐 Environments
+                                    <template if:true={hasSavedEnvironments}>
+                                        <span class="slds-badge slds-m-left_x-small">{savedEnvironments.length}</span>
+                                    </template>
+                                </a>
+                            </li>
+
+                        </ul>
+
+                        <!-- ══════════════════════════
+                             PANEL 1 — DEPLOY
+                             ══════════════════════════ -->
+                        <div class={findChangesPanelClass} role="tabpanel">
+
+                            <div class="slds-m-top_medium" style="overflow:visible; position:relative;">
+
+                                <div style="display:flex; flex-wrap:nowrap; gap:8px;
+                                            font-size:11px; font-weight:600; color:#706e6b;
+                                            text-transform:uppercase; letter-spacing:.4px;
+                                            padding-bottom:4px; padding-left:2px;">
+                                    <div style="width:175px; flex-shrink:0;">Metadata Type</div>
+                                    <div style="width:130px; flex-shrink:0;">Name</div>
+                                    <div style="width:130px; flex-shrink:0;">Label</div>
+                                    <div style="width:130px; flex-shrink:0;">Created By</div>
+                                    <div style="width:130px; flex-shrink:0;">Created Date</div>
+                                    <div style="width:130px; flex-shrink:0;">Modified By</div>
+                                    <div style="width:130px; flex-shrink:0;">Modified Date</div>
+                                </div>
+
+                                <div style="display:flex; flex-wrap:nowrap; align-items:flex-end;
+                                            gap:8px; overflow:visible; position:relative;">
+
+                                    <div style="width:175px; flex-shrink:0; overflow:visible; position:relative;">
+                                        <lightning-combobox
+                                            name="metadataType"
+                                            label="Metadata Type"
+                                            placeholder="Select Type"
+                                            value={selectedType}
+                                            options={metadataOptions}
+                                            onchange={handleTypeChange}>
+                                        </lightning-combobox>
+                                    </div>
+
+                                    <div style="width:130px; flex-shrink:0;">
+                                        <lightning-input
+                                            type="search"
+                                            label="Name"
+                                            placeholder="e.g. HelloWorld"
+                                            value={filterName}
+                                            onchange={handleFilterChange}
+                                            data-filter="name">
+                                        </lightning-input>
+                                    </div>
+
+                                    <div style="width:130px; flex-shrink:0;">
+                                        <lightning-input
+                                            type="search"
+                                            label="Label"
+                                            placeholder="e.g. My Class"
+                                            value={filterLabel}
+                                            onchange={handleFilterChange}
+                                            data-filter="label">
+                                        </lightning-input>
+                                    </div>
+
+                                    <div style="width:130px; flex-shrink:0;">
+                                        <lightning-input
+                                            type="search"
+                                            label="Created By"
+                                            placeholder="User name"
+                                            value={filterCreatedBy}
+                                            onchange={handleFilterChange}
+                                            data-filter="createdBy">
+                                        </lightning-input>
+                                    </div>
+
+                                    <div style="width:130px; flex-shrink:0; overflow:visible; position:relative;">
+                                        <lightning-input
+                                            type="date"
+                                            label="Created Date"
+                                            value={filterCreatedAfter}
+                                            onchange={handleFilterChange}
+                                            data-filter="createdAfter">
+                                        </lightning-input>
+                                    </div>
+
+                                    <div style="width:130px; flex-shrink:0;">
+                                        <lightning-input
+                                            type="search"
+                                            label="Modified By"
+                                            placeholder="User name"
+                                            value={filterModifiedBy}
+                                            onchange={handleFilterChange}
+                                            data-filter="modifiedBy">
+                                        </lightning-input>
+                                    </div>
+
+                                    <div style="width:130px; flex-shrink:0; overflow:visible; position:relative;">
+                                        <lightning-input
+                                            type="date"
+                                            label="Modified Date"
+                                            value={filterModifiedAfter}
+                                            onchange={handleFilterChange}
+                                            data-filter="modifiedAfter">
+                                        </lightning-input>
+                                    </div>
+
+                                    <div style="flex-shrink:0; display:flex; align-items:flex-end;
+                                                gap:4px; padding-bottom:1px;">
+                                        <lightning-button
+                                            label="Get Changes"
+                                            variant="brand"
+                                            disabled={isLoading}
+                                            onclick={fetchComponents}>
+                                        </lightning-button>
+                                        <template if:true={hasActiveFilters}>
+                                            <lightning-button
+                                                label="✕ Clear"
+                                                variant="neutral"
+                                                title="Clear All Filters"
+                                                onclick={clearFilters}>
+                                            </lightning-button>
+                                        </template>
+                                    </div>
+
+                                </div>
+
+                                <p class="slds-text-body_small slds-text-color_weak slds-m-top_xx-small">
+                                    {filterSummaryText}
+                                </p>
+
+                            </div>
+
+                            <template if:true={hasComponents}>
+                                <div class="slds-m-top_medium slds-box">
+                                    <div class="slds-grid slds-grid_align-spread slds-m-bottom_small">
+                                        <h3 class="slds-text-heading_small">
+                                            Results &nbsp;
+                                            <span class="slds-badge">{filteredComponents.length} item(s)</span>
+                                        </h3>
+                                        <div>
+                                            <lightning-button-group>
+                                                <lightning-button label="Select All (Filtered)"
+                                                    variant="neutral" onclick={selectAll}>
+                                                </lightning-button>
+                                                <lightning-button label="Deselect All"
+                                                    variant="neutral" onclick={deselectAll}>
+                                                </lightning-button>
+                                            </lightning-button-group>
+                                        </div>
+                                    </div>
+
+                                    <div class="slds-grid slds-text-title_caps slds-text-color_weak
+                                                slds-m-bottom_x-small slds-p-bottom_x-small"
+                                         style="border-bottom:1px solid #dddbda; font-size:11px;">
+                                        <div class="slds-col slds-size_1-of-12"></div>
+                                        <div class="slds-col slds-size_2-of-12">Name (API)</div>
+                                        <div class="slds-col slds-size_2-of-12">Label</div>
+                                        <div class="slds-col slds-size_2-of-12">Created By</div>
+                                        <div class="slds-col slds-size_1-of-12">Created Date</div>
+                                        <div class="slds-col slds-size_2-of-12">Last Modified By</div>
+                                        <div class="slds-col slds-size_1-of-12">Mod. Date</div>
+                                        <div class="slds-col slds-size_1-of-12">Status</div>
+                                    </div>
+
+                                    <template for:each={filteredComponents} for:item="comp">
+                                        <div key={comp.id}
+                                             class="slds-grid slds-grid_vertical-align-center slds-m-top_x-small"
+                                             style="border-bottom:1px solid #f3f2f2; padding-bottom:4px;">
+
+                                            <div class="slds-col slds-size_1-of-12">
+                                                <lightning-input type="checkbox" label=""
+                                                    checked={comp.checked}
+                                                    data-id={comp.id} data-name={comp.name}
+                                                    onchange={handleSelection}>
+                                                </lightning-input>
+                                            </div>
+                                            <div class="slds-col slds-size_2-of-12 slds-truncate"
+                                                 title={comp.name} style="font-weight:500; font-size:13px;">
+                                                {comp.name}
+                                            </div>
+                                            <div class="slds-col slds-size_2-of-12 slds-truncate slds-text-color_weak"
+                                                 style="font-size:12px;" title={comp.label}>
+                                                {comp.label}
+                                            </div>
+                                            <div class="slds-col slds-size_2-of-12 slds-truncate slds-text-color_weak"
+                                                 style="font-size:12px;" title={comp.createdBy}>
+                                                {comp.createdByDisplay}
+                                            </div>
+                                            <div class="slds-col slds-size_1-of-12 slds-text-color_weak"
+                                                 style="font-size:12px;">
+                                                {comp.createdDate}
+                                            </div>
+                                            <div class="slds-col slds-size_2-of-12 slds-truncate slds-text-color_weak"
+                                                 style="font-size:12px;" title={comp.lastModifiedBy}>
+                                                {comp.lastModifiedByDisplay}
+                                            </div>
+                                            <div class="slds-col slds-size_1-of-12 slds-text-color_weak"
+                                                 style="font-size:12px;">
+                                                {comp.lastModifiedDate}
+                                            </div>
+                                            <div class="slds-col slds-size_1-of-12">
+                                                <template if:true={comp.checked}>
+                                                    <span class="slds-badge"
+                                                          style="background:#2e844a;color:#fff;font-size:10px;">
+                                                        ✓
+                                                    </span>
+                                                </template>
+                                            </div>
+
+                                        </div>
+                                    </template>
+
+                                    <template if:true={noFilteredResults}>
+                                        <div style="text-align:center; padding:1.5rem;">
+                                            <p class="slds-text-color_weak">No components match your filters.</p>
+                                            <lightning-button label="Clear Filters" variant="neutral" onclick={clearFilters}></lightning-button>
+                                        </div>
+                                    </template>
+
+                                </div>
+
+                                <div class="slds-m-top_small slds-grid slds-grid_align-spread">
+                                    <p class="slds-text-body_small slds-text-color_weak">
+                                        {selectedComponents.length} component(s) selected total
+                                    </p>
+                                    <template if:true={hasSelectedComponents}>
+                                        <a onclick={goToSelectedTab} class="slds-text-link slds-text-body_small">
+                                            View Selected Changes →
+                                        </a>
+                                    </template>
+                                </div>
+
+                            </template>
+
+                        </div><!-- end Deploy panel -->
+
+                        <!-- ══════════════════════════
+                             PANEL 2 — SELECTED CHANGES
+                             ══════════════════════════ -->
+                        <div class={selectedChangesPanelClass} role="tabpanel">
+
+                            <template if:true={hasSelectedComponents}>
+                                <div class="slds-grid slds-grid_align-spread slds-m-top_medium slds-m-bottom_small">
+                                    <h3 class="slds-text-heading_small">
+                                        Changes &nbsp;
+                                        <span class="slds-badge">{selectedComponents.length} item(s)</span>
+                                    </h3>
+                                    <div>
+                                        <lightning-button label="Remove Selected"
+                                            variant="destructive-text"
+                                            disabled={noItemsCheckedInSelected}
+                                            onclick={removeCheckedFromSelected}>
+                                        </lightning-button>
+                                        &nbsp;
+                                        <lightning-button label="🚀 Deploy via GitHub"
+                                            variant="success" disabled={isLoading}
+                                            onclick={deploySelected}>
+                                        </lightning-button>
+                                    </div>
+                                </div>
+
+                                <div class="slds-grid slds-text-title_caps slds-text-color_weak
+                                            slds-m-bottom_x-small slds-p-bottom_x-small"
+                                     style="border-bottom:1px solid #dddbda; font-size:11px;">
+                                    <div class="slds-col slds-size_1-of-12"></div>
+                                    <div class="slds-col slds-size_1-of-12">#</div>
+                                    <div class="slds-col slds-size_2-of-12">Name</div>
+                                    <div class="slds-col slds-size_2-of-12">Label</div>
+                                    <div class="slds-col slds-size_2-of-12">Type</div>
+                                    <div class="slds-col slds-size_2-of-12">Modified By</div>
+                                    <div class="slds-col slds-size_2-of-12">Mod. Date</div>
+                                </div>
+
+                                <template for:each={selectedComponents} for:item="comp">
+                                    <div key={comp.id} class="slds-grid slds-grid_vertical-align-center slds-m-top_x-small">
+                                        <div class="slds-col slds-size_1-of-12">
+                                            <lightning-input type="checkbox" label=""
+                                                checked={comp.markedForRemoval}
+                                                data-id={comp.id} onchange={handleRemovalCheck}>
+                                            </lightning-input>
+                                        </div>
+                                        <div class="slds-col slds-size_1-of-12 slds-text-color_weak slds-text-body_small">{comp.rowNum}</div>
+                                        <div class="slds-col slds-size_2-of-12 slds-truncate" title={comp.name}>{comp.name}</div>
+                                        <div class="slds-col slds-size_2-of-12 slds-truncate slds-text-color_weak" style="font-size:12px;" title={comp.label}>{comp.label}</div>
+                                        <div class="slds-col slds-size_2-of-12 slds-text-color_weak" style="font-size:12px;">{comp.metadataType}</div>
+                                        <div class="slds-col slds-size_2-of-12 slds-text-color_weak slds-truncate" style="font-size:12px;">{comp.lastModifiedByDisplay}</div>
+                                        <div class="slds-col slds-size_2-of-12 slds-text-color_weak" style="font-size:12px;">{comp.lastModifiedDate}</div>
+                                    </div>
+                                </template>
+                            </template>
+
+                            <template if:false={hasSelectedComponents}>
+                                <div style="text-align:center;padding:2rem 0;">
+                                    <lightning-icon icon-name="utility:check" size="large"></lightning-icon>
+                                    <p class="slds-text-heading_small slds-m-top_small">No components selected yet.</p>
+                                    <p class="slds-text-body_small slds-text-color_weak">
+                                        Go to <a onclick={goToFindTab} class="slds-text-link">Deploy Tab</a>.
+                                    </p>
+                                </div>
+                            </template>
+
+                        </div><!-- end Selected panel -->
+
+                        <!-- ══════════════════════════
+                             PANEL 3 — DELETE
+                             ══════════════════════════ -->
+                        <div class={deleteTabPanelClass} role="tabpanel">
+
+                            <div class="slds-m-top_medium slds-notify slds-notify_alert"
+                                 style="background:#fdf1ee; border:1px solid #c23934; border-radius:4px; padding:12px 16px;">
+                                <lightning-icon icon-name="utility:warning" size="x-small" variant="error" class="slds-m-right_x-small"></lightning-icon>
+                                <strong style="color:#c23934;">Caution:</strong>
+                                <span style="color:#444;"> These components will be permanently deleted from the Target Org.</span>
+                            </div>
+
+                            <div class="slds-m-top_medium slds-grid slds-gutters slds-grid_vertical-align-end">
+                                <div class="slds-col slds-size_4-of-12">
+                                    <lightning-combobox name="deleteMetadataType"
+                                        label="Metadata Type (Target Org)"
+                                        value={selectedDeleteType} options={metadataOptions}
+                                        onchange={handleDeleteTypeChange}>
+                                    </lightning-combobox>
+                                </div>
+                                <div class="slds-col slds-size_3-of-12">
+                                    <lightning-button label="🔍 Fetch from Target Org"
+                                        variant="brand" disabled={isDeleteLoading}
+                                        onclick={fetchTargetComponents}>
+                                    </lightning-button>
+                                </div>
+                            </div>
+
+                            <template if:true={isDeleteLoading}>
+                                <div class="slds-m-top_medium" style="text-align:center;">
+                                    <lightning-spinner alternative-text="Loading..." size="small"></lightning-spinner>
+                                </div>
+                            </template>
+
+                            <template if:true={hasTargetComponents}>
+
+                                <div class="slds-m-top_medium slds-box slds-box_x-small"
+                                     style="background:#fdf1ee; border:1px solid #e8b4b0; border-radius:4px;">
+                                    <div class="slds-grid slds-gutters">
+                                        <div class="slds-col slds-size_4-of-12">
+                                            <lightning-input type="search" label="🔍 Search by Name"
+                                                placeholder="e.g. Account..."
+                                                value={filterDeleteName}
+                                                onchange={handleDeleteFilterChange}>
+                                            </lightning-input>
+                                        </div>
+                                    </div>
+                                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                        Showing <strong>{filteredTargetComponents.length}</strong> of {targetComponents.length}
+                                    </p>
+                                </div>
+
+                                <div class="slds-m-top_medium slds-box" style="border:1px solid #c23934;">
+                                    <div class="slds-grid slds-grid_align-spread slds-m-bottom_small">
+                                        <h3 class="slds-text-heading_small">
+                                            Target Org &nbsp;
+                                            <span class="slds-badge" style="background:#c23934;color:#fff;">{filteredTargetComponents.length}</span>
+                                        </h3>
+                                        <lightning-button-group>
+                                            <lightning-button label="Select All" variant="neutral" onclick={selectAllDelete}></lightning-button>
+                                            <lightning-button label="Deselect All" variant="neutral" onclick={deselectAllDelete}></lightning-button>
+                                        </lightning-button-group>
+                                    </div>
+
+                                    <template for:each={filteredTargetComponents} for:item="comp">
+                                        <div key={comp.id} class="slds-grid slds-grid_vertical-align-center slds-m-top_x-small">
+                                            <div class="slds-col slds-size_1-of-12">
+                                                <lightning-input type="checkbox" label=""
+                                                    checked={comp.checkedForDelete}
+                                                    data-id={comp.id} data-name={comp.name}
+                                                    onchange={handleDeleteSelection}>
+                                                </lightning-input>
+                                            </div>
+                                            <div class="slds-col slds-size_8-of-12 slds-truncate">{comp.name}</div>
+                                            <div class="slds-col slds-size_3-of-12 slds-text-color_weak" style="font-size:12px;">{selectedDeleteType}</div>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <div class="slds-m-top_medium slds-grid slds-grid_align-spread slds-grid_vertical-align-center">
+                                    <p class="slds-text-body_small slds-text-color_weak">
+                                        {deleteComponents.length} marked for deletion
+                                    </p>
+                                    <template if:true={hasDeleteComponents}>
+                                        <lightning-button label="🗑️ Delete from Target Org via GitHub"
+                                            variant="destructive" disabled={isLoading}
+                                            onclick={executeDelete}>
+                                        </lightning-button>
+                                    </template>
+                                </div>
+
+                            </template>
+
+                            <template if:false={hasTargetComponents}>
+                                <template if:false={isDeleteLoading}>
+                                    <div style="text-align:center;padding:2rem 0;">
+                                        <lightning-icon icon-name="utility:delete" size="large"></lightning-icon>
+                                        <p class="slds-text-heading_small slds-m-top_small">The components from the Target Org will be displayed here.</p>
+                                    </div>
+                                </template>
+                            </template>
+
+                        </div><!-- end Delete panel -->
+
+                        <!-- ══════════════════════════
+                             PANEL 4 — ENVIRONMENTS
+                             ══════════════════════════ -->
+                        <div class={environmentsPanelClass} role="tabpanel">
+
+                            <div class="slds-m-top_medium">
+
+                                <!-- Connect New Environment Box -->
+                                <div class="slds-box slds-m-bottom_medium" style="background:#f8f8f8; border:1px solid #dddbda;">
+                                    <div class="slds-grid slds-grid_vertical-align-center slds-m-bottom_medium">
+                                        <lightning-icon icon-name="utility:connected_apps" size="small" class="slds-m-right_small"></lightning-icon>
+                                        <h3 class="slds-text-heading_small">Connect a Salesforce Org</h3>
+                                    </div>
+
+                                    <div style="display:flex; flex-wrap:nowrap; gap:12px; align-items:flex-end;">
+
+                                        <div style="width:220px; flex-shrink:0;">
+                                            <lightning-input
+                                                type="text"
+                                                label="Environment Name"
+                                                placeholder="e.g. UAT Sandbox"
+                                                value={newEnvName}
+                                                onchange={handleEnvNameChange}
+                                                disabled={isConnecting}>
+                                            </lightning-input>
+                                        </div>
+
+                                        <div style="width:180px; flex-shrink:0;">
+                                            <lightning-combobox
+                                                label="Org Type"
+                                                value={newOrgType}
+                                                options={orgTypeOptions}
+                                                onchange={handleOrgTypeChange}
+                                                disabled={isConnecting}>
+                                            </lightning-combobox>
+                                        </div>
+
+                                        <div style="flex-shrink:0; padding-bottom:1px;">
+                                            <lightning-button
+                                                label="Connect to Salesforce"
+                                                variant="brand"
+                                                icon-name="utility:salesforce1"
+                                                icon-position="left"
+                                                onclick={initiateOAuth}
+                                                disabled={isConnecting}>
+                                            </lightning-button>
+                                        </div>
+
+                                    </div>
+
+                                    <template if:true={isConnecting}>
+                                        <div class="slds-m-top_small slds-grid slds-grid_vertical-align-center" style="gap:8px;">
+                                            <lightning-spinner alternative-text="Connecting..." size="small" style="position:relative; height:24px; width:24px;"></lightning-spinner>
+                                            <span class="slds-text-body_small slds-text-color_weak">{connectingMessage}</span>
+                                        </div>
+                                    </template>
+
+                                    <template if:true={connectStatusMessage}>
+                                        <div class="slds-m-top_small">
+                                            <p class={connectStatusClass}><strong>{connectStatusMessage}</strong></p>
+                                        </div>
+                                    </template>
+
+                                </div>
+
+                                <!-- Saved Environments List -->
+                                <template if:true={hasSavedEnvironments}>
+                                    <div class="slds-box" style="border:1px solid #dddbda;">
+                                        <div class="slds-grid slds-grid_align-spread slds-m-bottom_small">
+                                            <h3 class="slds-text-heading_small">
+                                                Saved Environments &nbsp;
+                                                <span class="slds-badge">{savedEnvironments.length}</span>
+                                            </h3>
+                                            <lightning-button
+                                                label="Refresh"
+                                                variant="neutral"
+                                                icon-name="utility:refresh"
+                                                icon-position="left"
+                                                onclick={loadSavedEnvironments}>
+                                            </lightning-button>
+                                        </div>
+
+                                        <div class="slds-grid slds-text-title_caps slds-text-color_weak slds-m-bottom_x-small slds-p-bottom_x-small"
+                                             style="border-bottom:1px solid #dddbda; font-size:11px;">
+                                            <div class="slds-col slds-size_3-of-12">Environment Name</div>
+                                            <div class="slds-col slds-size_3-of-12">Org Name</div>
+                                            <div class="slds-col slds-size_2-of-12">Org Type</div>
+                                            <div class="slds-col slds-size_2-of-12">Status</div>
+                                            <div class="slds-col slds-size_2-of-12">Actions</div>
+                                        </div>
+
+                                        <template for:each={savedEnvironments} for:item="env">
+                                            <div key={env.Id}
+                                                 class="slds-grid slds-grid_vertical-align-center slds-m-top_x-small"
+                                                 style="border-bottom:1px solid #f3f2f2; padding-bottom:6px;">
+
+                                                <div class="slds-col slds-size_3-of-12 slds-truncate"
+                                                     style="font-weight:500; font-size:13px;" title={env.Name}>
+                                                    {env.Name}
+                                                </div>
+                                                <div class="slds-col slds-size_3-of-12 slds-truncate slds-text-color_weak"
+                                                     style="font-size:12px;" title={env.Org_Name__c}>
+                                                    {env.Org_Name__c}
+                                                </div>
+                                                <div class="slds-col slds-size_2-of-12" style="font-size:12px;">
+                                                    <span class={env.orgTypeBadgeClass}>{env.Org_Type__c}</span>
+                                                </div>
+                                                <div class="slds-col slds-size_2-of-12" style="font-size:12px;">
+                                                    <span class={env.statusBadgeClass}>{env.Connection_Status__c}</span>
+                                                </div>
+                                                <div class="slds-col slds-size_2-of-12">
+                                                    <lightning-button-group>
+                                                        <lightning-button
+                                                            label="Reconnect"
+                                                            variant="neutral"
+                                                            data-id={env.Id}
+                                                            data-name={env.Name}
+                                                            data-type={env.Org_Type__c}
+                                                            onclick={reconnectEnvironment}>
+                                                        </lightning-button>
+                                                        <lightning-button
+                                                            label="Delete"
+                                                            variant="destructive-text"
+                                                            data-id={env.Id}
+                                                            onclick={deleteEnvironment}>
+                                                        </lightning-button>
+                                                    </lightning-button-group>
+                                                </div>
+
+                                            </div>
+                                        </template>
+
+                                    </div>
+                                </template>
+
+                                <!-- Empty state -->
+                                <template if:false={hasSavedEnvironments}>
+                                    <template if:false={isLoadingEnvironments}>
+                                        <div style="text-align:center; padding:2rem 0;">
+                                            <lightning-icon icon-name="utility:connected_apps" size="large"></lightning-icon>
+                                            <p class="slds-text-heading_small slds-m-top_small">No environments connected yet.</p>
+                                            <p class="slds-text-body_small slds-text-color_weak">
+                                                Use the form above to connect a Salesforce org via OAuth.
+                                            </p>
+                                        </div>
+                                    </template>
+                                </template>
+
+                                <template if:true={isLoadingEnvironments}>
+                                    <div class="slds-m-top_medium" style="text-align:center;">
+                                        <lightning-spinner alternative-text="Loading..." size="small"></lightning-spinner>
+                                    </div>
+                                </template>
+
+                            </div>
+
+                        </div><!-- end Environments panel -->
+
+                    </div><!-- end tabs -->
+                </div>
+
+            </div><!-- end left column -->
+
+            <!-- RIGHT — Previously Committed -->
+            <template if:true={showPrevCommitPanel}>
+                <div style="width:380px; flex-shrink:0; border-left:2px solid #dddbda; background:#fafaf9;">
+                    <div class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center slds-p-horizontal_medium slds-p-vertical_small"
+                         style="border-bottom:1px solid #dddbda; background:#f3f2f2;">
+                        <div class="slds-grid slds-grid_vertical-align-center">
+                            <lightning-icon icon-name="utility:clock" size="x-small" class="slds-m-right_x-small"></lightning-icon>
+                            <h3 class="slds-text-heading_small">Previously Committed</h3>
+                        </div>
+                        <lightning-button-icon icon-name="utility:close" variant="bare"
+                            alternative-text="Close" onclick={togglePrevCommitPanel}>
+                        </lightning-button-icon>
+                    </div>
+
+                    <template if:true={isPrevCommitLoading}>
+                        <div class="slds-p-around_large" style="text-align:center;">
+                            <lightning-spinner alternative-text="Loading..." size="small"></lightning-spinner>
+                        </div>
+                    </template>
+
+                    <template if:true={prevCommitError}>
+                        <div class="slds-p-around_medium">
+                            <p class="slds-text-color_error slds-text-body_small">❌ {prevCommitError}</p>
+                        </div>
+                    </template>
+
+                    <template if:true={hasPrevCommits}>
+                        <div style="overflow-y:auto; max-height:65vh;">
+                            <template for:each={prevCommits} for:item="pr">
+                                <div key={pr.number} style="border-bottom:1px solid #e5e5e5;">
+                                    <div class="slds-grid slds-grid_vertical-align-center slds-p-horizontal_medium slds-p-vertical_small"
+                                         style="cursor:pointer;" data-pr={pr.number} onclick={togglePrExpand}>
+                                        <lightning-icon icon-name={pr.expandIcon} size="xx-small" class="slds-m-right_x-small" style="flex-shrink:0;"></lightning-icon>
+                                        <div class="slds-col slds-has-flexi-truncate">
+                                            <p class="slds-truncate slds-text-body_small" style="font-weight:500;" title={pr.title}>{pr.title}</p>
+                                            <p class="slds-text-body_small slds-text-color_weak">PR #{pr.number} · {pr.mergedAt}</p>
+                                        </div>
+                                        <span class="slds-badge slds-m-left_x-small" style="background:#0070d2;color:#fff;flex-shrink:0;">{pr.fileCount} files</span>
+                                    </div>
+                                    <template if:true={pr.expanded}>
+                                        <div class="slds-p-horizontal_medium slds-p-bottom_small" style="background:#fff;">
+                                            <div class="slds-grid slds-text-title_caps slds-text-color_weak slds-p-vertical_x-small"
+                                                 style="border-bottom:1px solid #e5e5e5; font-size:11px;">
+                                                <div class="slds-col slds-size_7-of-12">Component</div>
+                                                <div class="slds-col slds-size_5-of-12">Type</div>
+                                            </div>
+                                            <template for:each={pr.files} for:item="file">
+                                                <div key={file.path} class="slds-grid slds-grid_vertical-align-center slds-p-vertical_xx-small" style="border-bottom:1px solid #f3f2f2;">
+                                                    <div class="slds-col slds-size_7-of-12 slds-truncate" title={file.fileLabel} style="font-size:12px;">{file.name}</div>
+                                                    <div class="slds-col slds-size_3-of-12" style="font-size:11px;">
+                                                        <span class="slds-badge slds-badge_lightest">{file.metadataType}</span>
+                                                    </div>
+                                                    <div class="slds-col slds-size_2-of-12" style="font-size:10px; color:#706e6b; text-align:right;">
+                                                        <template if:true={file.hasMultiple}>
+                                                            <span title={file.fileLabel}>📎 {file.fileCount}</span>
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <template if:false={hasPrevCommits}>
+                        <template if:false={isPrevCommitLoading}>
+                            <template if:false={prevCommitError}>
+                                <div style="text-align:center;padding:2rem;">
+                                    <p class="slds-text-body_small slds-text-color_weak">No previous commits found.</p>
+                                </div>
+                            </template>
+                        </template>
+                    </template>
+                </div>
+            </template>
+
+        </div><!-- end main layout -->
+
+        <template if:true={showProgress}>
+            <div class="slds-m-around_medium">
+                <lightning-progress-bar value={progressValue} size="large"></lightning-progress-bar>
+                <p class="slds-text-body_small slds-m-top_x-small">{progressLabel}</p>
+            </div>
+        </template>
+
+        <template if:true={isLoading}>
+            <div class="slds-m-around_medium">
+                <lightning-spinner alternative-text="Processing..." size="small"></lightning-spinner>
+            </div>
+        </template>
+
+        <template if:true={statusMessage}>
+            <div class="slds-m-around_medium">
+                <p class={statusClass}><strong>{statusMessage}</strong></p>
+            </div>
+        </template>
+
+    </lightning-card>
+</template>
