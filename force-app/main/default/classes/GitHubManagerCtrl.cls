@@ -1,206 +1,268 @@
 public without sharing class GitHubManagerCtrl {
 
+    // ═══════════════════════════════════════════════════════════
+    // CONSTANTS
+    // ═══════════════════════════════════════════════════════════
     private static final Integer TIMEOUT_MS = 120000;
-
-    private static OAuth_Config__mdt getGitHubConfig() {
-    List<OAuth_Config__mdt> configs = [
-        SELECT Client_Id__c, Client_Secret__c, Callback_Url__c
-        FROM OAuth_Config__mdt
-        WHERE App_Type__c = 'GitHub'
-        LIMIT 1
-    ];
-    if (configs.isEmpty()) {
-        throw new AuraHandledException(
-            'No GitHub OAuth App configured. Please contact administrator.'
-        );
-    }
-    return configs[0];
-}
+    private static final String GITHUB_API_BASE = 'https://api.github.com';
+    private static final String GITHUB_OAUTH_BASE = 'https://github.com/login/oauth';
+    private static final String HEADER_ACCEPT = 'application/vnd.github+json';
+    private static final String STATUS_CONNECTED = 'Connected';
+    private static final String STATUS_DISCONNECTED = 'Disconnected';
 
     // ═══════════════════════════════════════════════════════════
-    // Step 1 — Get GitHub Authorization URL
+    // RESPONSE WRAPPER
+    // ═══════════════════════════════════════════════════════════
+    public class ApiResponse {
+        @AuraEnabled public Boolean success;
+        @AuraEnabled public String message;
+        @AuraEnabled public String username;
+        @AuraEnabled public String connectionId;
+        @AuraEnabled public String repoName;
+        @AuraEnabled public Boolean isPrivate;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // HELPER METHOD FOR LWC EXCEPTIONS
+    // ═══════════════════════════════════════════════════════════
+    private static AuraHandledException createException(String msg) {
+        AuraHandledException ex = new AuraHandledException(msg);
+        ex.setMessage(msg);
+        return ex;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // FETCH GITHUB CONFIG
+    // ═══════════════════════════════════════════════════════════
+    private static OAuth_Config__mdt getGitHubConfig() {
+        List<OAuth_Config__mdt> configs = [
+            SELECT Client_Id__c, Client_Secret__c, Callback_Url__c
+            FROM OAuth_Config__mdt
+            WHERE App_Type__c = 'GitHub'
+            LIMIT 1
+        ];
+
+        if (configs.isEmpty()) {
+            throw createException('No GitHub OAuth configuration found.');
+        }
+
+        return configs[0];
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // COMMON REQUEST BUILDER
+    // ═══════════════════════════════════════════════════════════
+    private static HttpRequest createRequest(String endpoint, String method, String accessToken) {
+        HttpRequest req = new HttpRequest();
+        req.setEndpoint(endpoint);
+        req.setMethod(method);
+        req.setTimeout(TIMEOUT_MS);
+        req.setHeader('Accept', HEADER_ACCEPT);
+
+        if (!String.isBlank(accessToken)) {
+            req.setHeader('Authorization', 'Bearer ' + accessToken);
+        }
+
+        return req;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 1 — GET AUTHORIZATION URL
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-   public static String getAuthorizationUrl(String stateToken) {
-    try {
-        OAuth_Config__mdt config = getGitHubConfig();
+    public static String getAuthorizationUrl(String stateToken) {
+        try {
+            OAuth_Config__mdt config = getGitHubConfig();
 
-            String url = 'https://github.com/login/oauth/authorize'
-                + '?client_id='    + EncodingUtil.urlEncode(config.Client_Id__c,    'UTF-8')
+            String authUrl = GITHUB_OAUTH_BASE + '/authorize'
+                + '?client_id=' + EncodingUtil.urlEncode(config.Client_Id__c, 'UTF-8')
                 + '&redirect_uri=' + EncodingUtil.urlEncode(config.Callback_Url__c, 'UTF-8')
-                + '&scope='        + EncodingUtil.urlEncode('repo user',             'UTF-8')
-                + '&state='        + EncodingUtil.urlEncode(stateToken,              'UTF-8');
+                + '&scope=' + EncodingUtil.urlEncode('repo user', 'UTF-8')
+                + '&state=' + EncodingUtil.urlEncode(stateToken, 'UTF-8');
 
-            return url;
+            return authUrl;
+
         } catch (AuraHandledException e) {
             throw e;
         } catch (Exception e) {
-            throw new AuraHandledException('getAuthorizationUrl error: ' + e.getMessage());
+            throw createException('Authorization URL Error: ' + e.getMessage());
         }
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Step 2 — Exchange code for token and save
+    // STEP 2 — EXCHANGE CODE & SAVE
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-    public static Map<String, Object> exchangeCodeAndSave(
-        String authCode,
-        String connectionName,
-        String repoOwner,
-        String repoName
-    ) {
+    public static ApiResponse exchangeCodeAndSave(String authCode, String connectionName, String repoOwner, String repoName) {
         try {
-          OAuth_Config__mdt config = getGitHubConfig();
+            OAuth_Config__mdt config = getGitHubConfig();
 
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint('https://github.com/login/oauth/access_token');
-            req.setMethod('POST');
+            HttpRequest req = createRequest(GITHUB_OAUTH_BASE + '/access_token', 'POST', null);
             req.setHeader('Content-Type', 'application/x-www-form-urlencoded');
             req.setHeader('Accept', 'application/json');
-            req.setTimeout(TIMEOUT_MS);
+
             req.setBody(
-                'client_id='        + EncodingUtil.urlEncode(config.Client_Id__c,    'UTF-8')
-                + '&client_secret=' + EncodingUtil.urlEncode(config.Client_Secret__c,'UTF-8')
-                + '&code='          + EncodingUtil.urlEncode(authCode,               'UTF-8')
-                + '&redirect_uri='  + EncodingUtil.urlEncode(config.Callback_Url__c, 'UTF-8')
+                'client_id=' + EncodingUtil.urlEncode(config.Client_Id__c, 'UTF-8')
+                + '&client_secret=' + EncodingUtil.urlEncode(config.Client_Secret__c, 'UTF-8')
+                + '&code=' + EncodingUtil.urlEncode(authCode, 'UTF-8')
+                + '&redirect_uri=' + EncodingUtil.urlEncode(config.Callback_Url__c, 'UTF-8')
             );
 
             HttpResponse res = new Http().send(req);
 
             if (res.getStatusCode() != 200) {
-                throw new AuraHandledException(
-                    'Token exchange failed (' + res.getStatusCode() + '): ' + res.getBody()
-                );
+                throw createException('Token exchange failed: ' + res.getBody());
             }
 
-            Map<String, Object> tokenData  = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
-            String              accessToken = String.valueOf(tokenData.get('access_token'));
+            Map<String, Object> tokenData = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+            String accessToken = String.valueOf(tokenData.get('access_token'));
 
             if (String.isBlank(accessToken) || accessToken == 'null') {
-                throw new AuraHandledException('No access token received: ' + res.getBody());
+                throw createException('No access token received.');
             }
 
-            // Fetch GitHub user info
+            // Fetch GitHub username
             String githubUsername = fetchGitHubUsername(accessToken);
 
             // Verify repository access
             verifyRepoAccess(accessToken, repoOwner, repoName);
 
             // Check duplicate repo
-            List<GitHub_Connection__c> existingRepo = [
-                SELECT Id, Name FROM GitHub_Connection__c
-                WHERE Repo_Owner__c = :repoOwner
-                AND Repo_Name__c    = :repoName
-                AND Name           != :connectionName
-                LIMIT 1
-            ];
-            if (!existingRepo.isEmpty()) {
-                throw new AuraHandledException(
-                    'Repository "' + repoOwner + '/' + repoName + '" is already connected as "' + existingRepo[0].Name + '".'
-                );
-            }
+            checkDuplicateRepo(connectionName, repoOwner, repoName);
 
-            // Save to custom object
-            GitHub_Connection__c conn = upsertConnection(
-                connectionName, githubUsername, accessToken, repoOwner, repoName
-            );
+            // Save connection
+            GitHub_Connection__c conn = upsertConnection(connectionName, githubUsername, accessToken, repoOwner, repoName);
 
-            return new Map<String, Object>{
-                'success'      => true,
-                'username'     => githubUsername,
-                'connectionId' => conn.Id,
-                'message'      => 'Connected successfully: ' + githubUsername
-            };
+            ApiResponse response = new ApiResponse();
+            response.success = true;
+            response.message = 'Connected successfully';
+            response.username = githubUsername;
+            response.connectionId = conn.Id;
+
+            return response;
 
         } catch (AuraHandledException e) {
             throw e;
         } catch (Exception e) {
-            throw new AuraHandledException('exchangeCodeAndSave error: ' + e.getMessage());
+            throw createException('Exchange Error: ' + e.getMessage());
         }
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Fetch GitHub username from API
+    // FETCH GITHUB USERNAME
     // ═══════════════════════════════════════════════════════════
     private static String fetchGitHubUsername(String accessToken) {
         try {
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint('https://api.github.com/user');
-            req.setMethod('GET');
-            req.setHeader('Authorization', 'Bearer ' + accessToken);
-            req.setHeader('Accept', 'application/vnd.github+json');
-            req.setTimeout(TIMEOUT_MS);
-
+            HttpRequest req = createRequest(GITHUB_API_BASE + '/user', 'GET', accessToken);
             HttpResponse res = new Http().send(req);
-            if (res.getStatusCode() == 200) {
-                Map<String, Object> info = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
-                return info.get('login') != null ? String.valueOf(info.get('login')) : 'Unknown';
+
+            if (res.getStatusCode() != 200) {
+                throw createException('Failed to fetch GitHub user.');
             }
-            return 'Unknown';
+
+            Map<String, Object> data = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+            return String.valueOf(data.get('login'));
+
+        } catch (AuraHandledException e) {
+            throw e;
         } catch (Exception e) {
-            return 'Unknown';
+            throw createException('GitHub user fetch error: ' + e.getMessage());
         }
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Upsert connection record
+    // VERIFY REPOSITORY ACCESS
     // ═══════════════════════════════════════════════════════════
-    private static GitHub_Connection__c upsertConnection(
-        String connectionName,
-        String githubUsername,
-        String accessToken,
-        String repoOwner,
-        String repoName
-    ) {
+    private static HttpResponse getRepoResponse(String accessToken, String repoOwner, String repoName) {
+        HttpRequest req = createRequest(GITHUB_API_BASE + '/repos/' + repoOwner + '/' + repoName, 'GET', accessToken);
+        return new Http().send(req);
+    }
+
+    private static void verifyRepoAccess(String accessToken, String repoOwner, String repoName) {
+        HttpResponse res = getRepoResponse(accessToken, repoOwner, repoName);
+        Integer statusCode = res.getStatusCode();
+
+        if (statusCode == 404) {
+            throw createException('Repository not found.');
+        } else if (statusCode == 401 || statusCode == 403) {
+            throw createException('Access denied to repository.');
+        } else if (statusCode != 200) {
+            throw createException('Repository verification failed: ' + res.getBody());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // CHECK DUPLICATE REPOSITORY
+    // ═══════════════════════════════════════════════════════════
+    private static void checkDuplicateRepo(String connectionName, String repoOwner, String repoName) {
         List<GitHub_Connection__c> existing = [
-            SELECT Id FROM GitHub_Connection__c
+            SELECT Id, Name
+            FROM GitHub_Connection__c
+            WHERE Repo_Owner__c = :repoOwner
+            AND Repo_Name__c = :repoName
+            AND Name != :connectionName
+            LIMIT 1
+        ];
+
+        if (!existing.isEmpty()) {
+            throw createException('Repository already connected as "' + existing[0].Name + '".');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // UPSERT CONNECTION
+    // ═══════════════════════════════════════════════════════════
+    private static GitHub_Connection__c upsertConnection(String connectionName, String githubUsername, String accessToken, String repoOwner, String repoName) {
+        List<GitHub_Connection__c> existing = [
+            SELECT Id
+            FROM GitHub_Connection__c
             WHERE Name = :connectionName
             LIMIT 1
         ];
 
         GitHub_Connection__c conn = existing.isEmpty() ? new GitHub_Connection__c() : existing[0];
-        conn.Name               = connectionName;
+        conn.Name = connectionName;
         conn.GitHub_Username__c = githubUsername;
-        conn.Access_Token__c    = accessToken;
-        conn.Repo_Owner__c      = repoOwner;
-        conn.Repo_Name__c       = repoName;
-        conn.Status__c          = 'Connected';
-        conn.Connected_By__c    = UserInfo.getUserId();
+        conn.Access_Token__c = accessToken;
+        conn.Repo_Owner__c = repoOwner;
+        conn.Repo_Name__c = repoName;
+        conn.Status__c = STATUS_CONNECTED;
+        conn.Connected_By__c = UserInfo.getUserId();
 
         upsert conn;
         return conn;
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Get saved connections
+    // GET SAVED CONNECTIONS
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled(cacheable=false)
     public static List<GitHub_Connection__c> getSavedConnections() {
         return [
-            SELECT Id, Name, GitHub_Username__c, Repo_Owner__c, Repo_Name__c,
-                   Status__c, LastModifiedDate
+            SELECT Id, Name, GitHub_Username__c, Repo_Owner__c, Repo_Name__c, Status__c, LastModifiedDate
             FROM GitHub_Connection__c
+            WITH SECURITY_ENFORCED
             ORDER BY LastModifiedDate DESC
         ];
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Delete connection
+    // DELETE CONNECTION
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static void deleteConnection(String connectionId) {
         try {
             delete new GitHub_Connection__c(Id = connectionId);
         } catch (Exception e) {
-            throw new AuraHandledException('deleteConnection error: ' + e.getMessage());
+            throw createException('Delete Error: ' + e.getMessage());
         }
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Verify connection — test API call
+    // VERIFY CONNECTION
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-    public static Map<String, Object> verifyConnection(String connectionId) {
+    public static ApiResponse verifyConnection(String connectionId) {
         try {
             GitHub_Connection__c conn = [
                 SELECT Access_Token__c, Repo_Owner__c, Repo_Name__c
@@ -209,62 +271,36 @@ public without sharing class GitHubManagerCtrl {
                 LIMIT 1
             ];
 
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint('https://api.github.com/repos/' + conn.Repo_Owner__c + '/' + conn.Repo_Name__c);
-            req.setMethod('GET');
-            req.setHeader('Authorization', 'Bearer ' + conn.Access_Token__c);
-            req.setHeader('Accept', 'application/vnd.github+json');
-            req.setTimeout(TIMEOUT_MS);
-
-            HttpResponse res = new Http().send(req);
+            HttpResponse res = getRepoResponse(conn.Access_Token__c, conn.Repo_Owner__c, conn.Repo_Name__c);
+            ApiResponse response = new ApiResponse();
 
             if (res.getStatusCode() == 200) {
                 Map<String, Object> repoData = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
-                update new GitHub_Connection__c(Id = connectionId, Status__c = 'Connected');
-                return new Map<String, Object>{
-                    'success'  => true,
-                    'repoName' => String.valueOf(repoData.get('full_name')),
-                    'private'  => repoData.get('private'),
-                    'message'  => 'Repository verified successfully'
-                };
-            } else {
-                update new GitHub_Connection__c(Id = connectionId, Status__c = 'Disconnected');
-                throw new AuraHandledException(
-                    'Repo verification failed (' + res.getStatusCode() + '): ' + res.getBody()
+
+                update new GitHub_Connection__c(
+                    Id = connectionId,
+                    Status__c = STATUS_CONNECTED
                 );
+
+                response.success = true;
+                response.repoName = String.valueOf(repoData.get('full_name'));
+                response.isPrivate = (Boolean) repoData.get('private');
+                response.message = 'Repository verified successfully';
+
+            } else {
+                update new GitHub_Connection__c(
+                    Id = connectionId,
+                    Status__c = STATUS_DISCONNECTED
+                );
+                throw createException('Repository verification failed.');
             }
+
+            return response;
+
         } catch (AuraHandledException e) {
             throw e;
         } catch (Exception e) {
-            throw new AuraHandledException('verifyConnection error: ' + e.getMessage());
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // Verify repo access during connect
-    // ═══════════════════════════════════════════════════════════
-    private static void verifyRepoAccess(String accessToken, String repoOwner, String repoName) {
-        HttpRequest req = new HttpRequest();
-        req.setEndpoint('https://api.github.com/repos/' + repoOwner + '/' + repoName);
-        req.setMethod('GET');
-        req.setHeader('Authorization', 'Bearer ' + accessToken);
-        req.setHeader('Accept', 'application/vnd.github+json');
-        req.setTimeout(TIMEOUT_MS);
-
-        HttpResponse res = new Http().send(req);
-
-        if (res.getStatusCode() == 404) {
-            throw new AuraHandledException(
-                'Repository "' + repoOwner + '/' + repoName + '" not found. Please check the owner and repo name.'
-            );
-        } else if (res.getStatusCode() == 401 || res.getStatusCode() == 403) {
-            throw new AuraHandledException(
-                'Access denied to repository "' + repoOwner + '/' + repoName + '". Make sure your GitHub account has access.'
-            );
-        } else if (res.getStatusCode() != 200) {
-            throw new AuraHandledException(
-                'Could not verify repository (' + res.getStatusCode() + '): ' + res.getBody()
-            );
+            throw createException('Verification Error: ' + e.getMessage());
         }
     }
 }
