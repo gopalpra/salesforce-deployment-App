@@ -214,7 +214,7 @@ public without sharing class EnvironmentManagerCtrl {
             }
         }
 
-        List<Environment__c> existing = [
+        List<Environment__c> existing = [   
             SELECT Id FROM Environment__c
             WHERE Name = :environmentName
             LIMIT 1
