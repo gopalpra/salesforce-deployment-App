@@ -1,0 +1,74 @@
+<template>
+    <lightning-card title="Create Pipeline" icon-name="utility:flow">
+        <div class="slds-p-around_medium">
+
+            <!-- Pipeline Name -->
+            <lightning-input
+                label="Pipeline Name"
+                value={pipelineName}
+                onchange={handleName}
+                placeholder="e.g. Dev to QA">
+            </lightning-input>
+
+            <!-- Source Org -->
+            <lightning-combobox
+                label="Source Org"
+                value={sourceOrgId}
+                options={envOptions}
+                onchange={handleSourceOrg}
+                placeholder="Select Source Org">
+            </lightning-combobox>
+
+            <!-- Source Branch -->
+            <lightning-input
+                label="Source Branch"
+                value={sourceBranch}
+                onchange={handleSourceBranch}
+                placeholder="e.g. feature/login">
+            </lightning-input>
+
+            <!-- Target Org -->
+            <lightning-combobox
+                label="Target Org"
+                value={targetOrgId}
+                options={envOptions}
+                onchange={handleTargetOrg}
+                placeholder="Select Target Org">
+            </lightning-combobox>
+
+            <!-- Target Branch -->
+            <lightning-input
+                label="Target Branch"
+                value={targetBranch}
+                onchange={handleTargetBranch}
+                placeholder="e.g. main">
+            </lightning-input>
+
+            <!-- Jira ID -->
+            <lightning-input
+                label="Jira ID"
+                value={jiraId}
+                onchange={handleJiraId}
+                placeholder="e.g. PROJ-123">
+            </lightning-input>
+
+            <!-- Status -->
+            <lightning-combobox
+                label="Status"
+                value={status}
+                options={statusOptions}
+                onchange={handleStatus}>
+            </lightning-combobox>
+
+            <!-- Save Button -->
+            <div class="slds-m-top_medium">
+                <lightning-button
+                    variant="brand"
+                    label="Save Pipeline"
+                    onclick={handleSave}>
+                </lightning-button>
+            </div>
+
+        </div>
+    </lightning-card>
+</template>
