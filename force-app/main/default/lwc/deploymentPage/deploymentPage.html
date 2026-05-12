@@ -1,0 +1,143 @@
+<template>
+    <lightning-card title="🚀 Deployment" icon-name="standard:apex">
+        <div class="slds-p-around_medium">
+
+            <!-- Pipeline Info Bar -->
+            <div class="slds-box slds-m-bottom_medium" 
+                 style="background:#f3f2f2; border-left:4px solid #0070d2;">
+                <div class="slds-grid slds-gutters slds-grid_vertical-align-center">
+                    <div class="slds-col">
+                        <p class="slds-text-title_caps slds-text-color_weak" style="font-size:11px;">Source</p>
+                        <p style="font-weight:600;">{sourceOrgName}</p>
+                        <p class="slds-text-color_weak" style="font-size:12px;">Branch: {sourceBranch}</p>
+                    </div>
+                    <div class="slds-col slds-size_1-of-12" style="text-align:center;">
+                        <lightning-icon icon-name="utility:forward" size="medium"></lightning-icon>
+                    </div>
+                    <div class="slds-col">
+                        <p class="slds-text-title_caps slds-text-color_weak" style="font-size:11px;">Target</p>
+                        <p style="font-weight:600;">{targetOrgName}</p>
+                        <p class="slds-text-color_weak" style="font-size:12px;">Branch: {targetBranch}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metadata Type Select -->
+            <div class="slds-grid slds-gutters slds-grid_vertical-align-end slds-m-bottom_medium">
+                <div class="slds-col slds-size_4-of-12">
+                    <lightning-combobox
+                        label="Metadata Type"
+                        value={selectedType}
+                        options={metadataOptions}
+                        onchange={handleTypeChange}
+                        placeholder="Select Type">
+                    </lightning-combobox>
+                </div>
+                <div class="slds-col">
+                    <lightning-button
+                        label="🔍 Fetch Metadata"
+                        variant="brand"
+                        onclick={fetchMetadata}
+                        disabled={isLoading}>
+                    </lightning-button>
+                </div>
+            </div>
+
+            <!-- Loading -->
+            <template if:true={isLoading}>
+                <div style="text-align:center; padding:1rem;">
+                    <lightning-spinner alternative-text="Loading..." size="small"></lightning-spinner>
+                    <p class="slds-text-color_weak slds-m-top_small">{statusMessage}</p>
+                </div>
+            </template>
+
+            <!-- Metadata List -->
+            <template if:true={hasComponents}>
+                <div class="slds-box slds-m-bottom_medium">
+                    <div class="slds-grid slds-grid_align-spread slds-m-bottom_small">
+                        <h3 class="slds-text-heading_small">
+                            Metadata &nbsp;
+                            <span class="slds-badge">{components.length} item(s)</span>
+                        </h3>
+                        <lightning-button-group>
+                            <lightning-button label="Select All" variant="neutral" onclick={selectAll}></lightning-button>
+                            <lightning-button label="Deselect All" variant="neutral" onclick={deselectAll}></lightning-button>
+                        </lightning-button-group>
+                    </div>
+
+                    <!-- Header -->
+                    <div class="slds-grid slds-text-title_caps slds-text-color_weak slds-m-bottom_x-small"
+                         style="border-bottom:1px solid #dddbda; font-size:11px; padding-bottom:4px;">
+                        <div class="slds-col slds-size_1-of-12"></div>
+                        <div class="slds-col slds-size_4-of-12">Name</div>
+                        <div class="slds-col slds-size_3-of-12">Modified By</div>
+                        <div class="slds-col slds-size_2-of-12">Modified Date</div>
+                        <div class="slds-col slds-size_2-of-12">Status</div>
+                    </div>
+
+                    <!-- Rows -->
+                    <template for:each={components} for:item="comp">
+                        <div key={comp.id}
+                             class="slds-grid slds-grid_vertical-align-center slds-m-top_x-small"
+                             style="border-bottom:1px solid #f3f2f2; padding-bottom:4px;">
+                            <div class="slds-col slds-size_1-of-12">
+                                <lightning-input type="checkbox" label=""
+                                    checked={comp.checked}
+                                    data-id={comp.id}
+                                    onchange={handleSelection}>
+                                </lightning-input>
+                            </div>
+                            <div class="slds-col slds-size_4-of-12" style="font-weight:500; font-size:13px;">
+                                {comp.name}
+                            </div>
+                            <div class="slds-col slds-size_3-of-12 slds-text-color_weak" style="font-size:12px;">
+                                {comp.lastModifiedBy}
+                            </div>
+                            <div class="slds-col slds-size_2-of-12 slds-text-color_weak" style="font-size:12px;">
+                                {comp.lastModifiedDate}
+                            </div>
+                            <div class="slds-col slds-size_2-of-12">
+                                <template if:true={comp.checked}>
+                                    <span class="slds-badge" style="background:#2e844a; color:#fff; font-size:10px;">✓</span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Deploy Button -->
+                <div class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center">
+                    <p class="slds-text-body_small slds-text-color_weak">
+                        {selectedCount} component(s) selected
+                    </p>
+                    <template if:true={hasSelected}>
+                        <lightning-button
+                            label="🚀 Deploy to Target Org"
+                            variant="success"
+                            onclick={handleDeploy}
+                            disabled={isLoading}>
+                        </lightning-button>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Progress -->
+            <template if:true={showProgress}>
+                <div class="slds-m-top_medium">
+                    <lightning-progress-bar value={progressValue} size="large"></lightning-progress-bar>
+                    <p class="slds-text-body_small slds-m-top_x-small">{progressLabel}</p>
+                </div>
+            </template>
+
+            <!-- Status Message -->
+            <template if:true={statusMessage}>
+                <template if:false={isLoading}>
+                    <div class="slds-m-top_medium">
+                        <p class={statusClass}><strong>{statusMessage}</strong></p>
+                    </div>
+                </template>
+            </template>
+
+        </div>
+    </lightning-card>
+</template>

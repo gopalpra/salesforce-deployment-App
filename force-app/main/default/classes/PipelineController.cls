@@ -54,4 +54,12 @@ public with sharing class PipelineController {
             LIMIT 1
         ];
     }
+    @AuraEnabled(cacheable=true)
+public static List<Map<String, Object>> getComponentsForOrg(
+    String metadataType,
+    Id orgId
+) {
+    
+    return DeploymentToolCtrl.getComponents(metadataType);
+}
 }

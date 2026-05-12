@@ -1,0 +1,134 @@
+<template>
+    <lightning-card title="Pipeline Deployment"
+                    icon-name="utility:flow">
+        <div class="slds-p-around_medium">
+ 
+            <!-- Loading -->
+            <template if:true={isLoading}>
+                <div style="text-align:center; padding:1rem;">
+                    <lightning-spinner
+                        alternative-text="Loading..."
+                        size="small">
+                    </lightning-spinner>
+                </div>
+            </template>
+ 
+            <!-- Error -->
+            <template if:true={hasError}>
+                <div class="slds-notify slds-notify_alert"
+                     style="background:#fdf1ee; border:1px solid #c23934;
+                            border-radius:4px; padding:8px 12px;">
+                    <p class="slds-text-color_error">
+                        ❌ {errorMessage}
+                    </p>
+                </div>
+            </template>
+ 
+            <!-- Pipeline Details -->
+            <template if:true={hasPipeline}>
+ 
+                <!-- Source → Target Bar -->
+                <div class="slds-box slds-m-bottom_medium"
+                     style="background:#f3f2f2;
+                            border-left:4px solid #0070d2;">
+                    <div class="slds-grid slds-gutters
+                                slds-grid_vertical-align-center">
+ 
+                        <!-- Source -->
+                        <div class="slds-col">
+                            <p class="slds-text-title_caps
+                                      slds-text-color_weak"
+                               style="font-size:11px;">
+                                Source Org
+                            </p>
+                            <p style="font-weight:600; font-size:14px;">
+                                {sourceOrgName}
+                            </p>
+                            <p class="slds-text-color_weak"
+                               style="font-size:12px;">
+                                Branch: {sourceBranch}
+                            </p>
+                        </div>
+ 
+                        <!-- Arrow -->
+                        <div class="slds-col slds-size_1-of-12"
+                             style="text-align:center;">
+                            <lightning-icon
+                                icon-name="utility:forward"
+                                size="small">
+                            </lightning-icon>
+                        </div>
+ 
+                        <!-- Target -->
+                        <div class="slds-col">
+                            <p class="slds-text-title_caps
+                                      slds-text-color_weak"
+                               style="font-size:11px;">
+                                Target Org
+                            </p>
+                            <p style="font-weight:600; font-size:14px;">
+                                {targetOrgName}
+                            </p>
+                            <p class="slds-text-color_weak"
+                               style="font-size:12px;">
+                                Branch: {targetBranch}
+                            </p>
+                        </div>
+ 
+                    </div>
+                </div>
+ 
+                <!-- Jira + Status -->
+                <div class="slds-grid slds-gutters
+                            slds-m-bottom_medium">
+                    <div class="slds-col">
+                        <p class="slds-text-color_weak"
+                           style="font-size:11px;">
+                            JIRA ID
+                        </p>
+                        <p style="font-weight:500;">
+                            {jiraId}
+                        </p>
+                    </div>
+                    <div class="slds-col">
+                        <p class="slds-text-color_weak"
+                           style="font-size:11px;">
+                            STATUS
+                        </p>
+                        <span class={statusBadgeClass}>
+                            {pipeline.Status__c}
+                        </span>
+                    </div>
+                </div>
+ 
+                <!-- Commit Button -->
+                <lightning-button
+                    label="🚀 Commit & Deploy"
+                    variant="brand"
+                    onclick={handleCommit}
+                    disabled={isLoading}>
+                </lightning-button>
+ 
+            </template>
+ 
+            <!-- No Pipeline -->
+            <template if:false={hasPipeline}>
+                <template if:false={isLoading}>
+                    <div style="text-align:center; padding:1rem;">
+                        <lightning-icon
+                            icon-name="utility:warning"
+                            size="small"
+                            variant="warning">
+                        </lightning-icon>
+                        <p class="slds-text-color_weak
+                                  slds-m-top_small">
+                            Koi Pipeline linked nahi hai!
+                        </p>
+                    </div>
+                </template>
+            </template>
+ 
+        </div>
+    </lightning-card>
+</template>
+ 
