@@ -4,10 +4,9 @@ import { wire } from 'lwc';
 import { loadScript } from 'lightning/platformResourceLoader';
 import JSZIP from '@salesforce/resourceUrl/JSZip';
 
-import getComponentsForOrg  from '@salesforce/apex/PipelineController.getComponentsForOrg';
-import getPipelineDetail    from '@salesforce/apex/PipelineController.getPipelineDetail';
 
-// Reuse existing deploy methods tumhare DeploymentToolCtrl se
+
+
 import startRetrieve        from '@salesforce/apex/DeploymentToolCtrl.startRetrieve';
 import checkRetrieveStatus  from '@salesforce/apex/DeploymentToolCtrl.checkRetrieveStatus';
 import getMainBranchSha     from '@salesforce/apex/DeploymentToolCtrl.getMainBranchSha';
@@ -25,7 +24,7 @@ const WORKFLOW_MAX_ATTEMPTS  = 20;
 
 export default class DeploymentPage extends LightningElement {
 
-    // URL params se aayega
+   
     @track pipelineId;
     @track sourceOrgId;
     @track targetOrgId;
@@ -45,7 +44,7 @@ export default class DeploymentPage extends LightningElement {
 
     jsZipLoaded = false;
 
-    // URL params read karo
+    
     @wire(CurrentPageReference)
     setPageRef(pageRef) {
         if (pageRef?.state) {
@@ -54,7 +53,7 @@ export default class DeploymentPage extends LightningElement {
             this.targetOrgId  = pageRef.state.c__targetOrgId;
             this.sourceBranch = pageRef.state.c__sourceBranch;
             this.targetBranch = pageRef.state.c__targetBranch;
-            this.loadPipelineNames();
+           
         }
     }
 
@@ -64,15 +63,7 @@ export default class DeploymentPage extends LightningElement {
             .catch(err => console.error('JSZip load failed:', err));
     }
 
-    async loadPipelineNames() {
-        try {
-            const pipeline = await getPipelineDetail({ pipelineId: this.pipelineId });
-            this.sourceOrgName = pipeline.Source_Org__r.Name;
-            this.targetOrgName = pipeline.Target_Org__r.Name;
-        } catch(e) {
-            console.error('Pipeline load error:', e);
-        }
-    }
+    
 
     get hasComponents() { return this.components.length > 0; }
     get hasSelected()   { return this.components.some(c => c.checked); }
@@ -99,14 +90,14 @@ export default class DeploymentPage extends LightningElement {
         this.components   = [];
     }
 
-    // Source Org se metadata fetch karo
+    
     async fetchMetadata() {
         if (!this.selectedType) {
-            this.setStatus('Pehle Metadata Type select karo!', false);
+            this.setStatus('First, select the metadata type!', false);
             return;
         }
         this.isLoading    = true;
-        this.statusMessage = 'Source Org se metadata fetch ho raha hai...';
+        this.statusMessage = 'The metadata is being fetched from the source org...';
         try {
             const raw = await getComponentsForOrg({
                 metadataType : this.selectedType,
@@ -114,7 +105,7 @@ export default class DeploymentPage extends LightningElement {
             });
             this.components = raw.map(c => ({ ...c, checked: false }));
             if (!this.components.length) {
-                this.setStatus('Koi component nahi mila!', false);
+                this.setStatus('No component was found!', false);
             }
         } catch(e) {
             this.setStatus('Fetch Error: ' + this.getError(e), false);
@@ -135,15 +126,15 @@ export default class DeploymentPage extends LightningElement {
     selectAll()   { this.components = this.components.map(c => ({ ...c, checked: true  })); }
     deselectAll() { this.components = this.components.map(c => ({ ...c, checked: false })); }
 
-    // Deploy to Target Org
+   
     async handleDeploy() {
         const selected = this.components.filter(c => c.checked);
         if (!selected.length) {
-            this.setStatus('Koi component select nahi kiya!', false);
+            this.setStatus('No component selected!', false);
             return;
         }
         if (!this.jsZipLoaded) {
-            this.setStatus('JSZip load ho raha hai, thoda wait karo...', false);
+            this.setStatus('JSZip is loading, please wait...', false);
             return;
         }
 
@@ -152,7 +143,7 @@ export default class DeploymentPage extends LightningElement {
 
         try {
             // Step 1: Retrieve
-            this.updateProgress('Step 1/4 — Source Org se retrieve ho raha hai...', 10);
+            this.updateProgress('Step 1/4 — The metadata is being retrieved from the source org...', 10);
             const jobId = await startRetrieve({
                 componentNames: selected.map(c => c.name),
                 metadataType  : this.selectedType
@@ -168,13 +159,13 @@ export default class DeploymentPage extends LightningElement {
             if (!zipBase64) throw new Error('Retrieve timeout!');
 
             // Step 2: GitHub Branch
-            this.updateProgress('Step 2/4 — GitHub branch ban rahi hai...', 35);
+            this.updateProgress('Step 2/4 — Creating GitHub branch...', 35);
             const sha        = await getMainBranchSha();
             const branchName = `deploy/pipeline-${this.pipelineId}-${Date.now()}`;
             await createFeatureBranch({ branchName, sha });
 
             // Step 3: Push to GitHub
-            this.updateProgress('Step 3/4 — Files GitHub pe push ho rahi hain...', 55);
+            this.updateProgress('Step 3/4 — The files are being pushed to GitHub....', 55);
             const files = await this.unzipFiles(zipBase64);
             const packageXml = this.buildPackageXml(selected);
             const allFiles = [
@@ -188,7 +179,7 @@ export default class DeploymentPage extends LightningElement {
             });
 
             // Step 4: PR + Merge
-            this.updateProgress('Step 4/4 — PR create aur merge ho rahi hai...', 75);
+            this.updateProgress('Step 4/4 — The PR is being created and merged..', 75);
             const title    = `Pipeline Deploy: ${this.selectedType} (${selected.length} components)`;
             const prNumber = await createPullRequest({ branchName, title });
             await mergePullRequest({ prNumber });
@@ -206,14 +197,14 @@ export default class DeploymentPage extends LightningElement {
             });
 
             // Poll workflow
-            this.updateProgress('GitHub Actions ka wait kar rahe hain...', 85);
+            this.updateProgress('We are waiting for the GitHub Actions...', 85);
             const finalStatus = await this.pollWorkflowStatus(logId, branchName);
 
             if (finalStatus === 'Deployed') {
                 this.updateProgress(`✅ Deploy successful! PR #${prNumber}`, 100);
-                this.setStatus(`${selected.length} components Target Org mein deploy ho gaye! PR #${prNumber}`, true);
+                this.setStatus(`${selected.length} The components have been deployed to the target org! PR #${prNumber}`, true);
             } else {
-                this.setStatus(`PR #${prNumber} merge hua lekin GitHub Actions fail hua. Logs check karo.`, false);
+                this.setStatus(`PR #${prNumber} It was merged, but the GitHub Actions failed. Please check the logs.`, false);
             }
 
         } catch(e) {
