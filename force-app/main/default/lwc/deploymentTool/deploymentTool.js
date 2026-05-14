@@ -101,7 +101,7 @@ export default class DeploymentTool extends LightningElement {
         this.orgLoadError = '';
         this.orgsReady    = false;
         try {
-            // Step 1: User Story se source + target org details lo
+           
             const orgDetails = await getOrgDetailsFromUserStory({ 
                 userStoryId: this.userStoryId 
             });
@@ -109,7 +109,6 @@ export default class DeploymentTool extends LightningElement {
             this.sourceOrgName = orgDetails.sourceOrgName || 'Source Org';
             this.targetOrgName = orgDetails.targetOrgName || 'Target Org';
 
-            // Step 2: Source org ka access token refresh karo
             const sourceToken = await refreshAccessToken({
                 refreshToken : orgDetails.sourceRefreshToken,
                 orgType      : orgDetails.sourceOrgType
@@ -117,7 +116,6 @@ export default class DeploymentTool extends LightningElement {
             this.sourceAccessToken = sourceToken.accessToken;
             this.sourceInstanceUrl = sourceToken.instanceUrl;
 
-            // Step 3: Target org ka access token refresh karo
             const targetToken = await refreshAccessToken({
                 refreshToken : orgDetails.targetRefreshToken,
                 orgType      : orgDetails.targetOrgType
@@ -318,7 +316,8 @@ export default class DeploymentTool extends LightningElement {
     }
 
     // ══════════════════════════════════════════════════════════
-    // FETCH COMPONENTS — Source org se dynamic fetch
+    // FETCH COMPONENTS — Dynamic fetch from the source org.
+
     // ══════════════════════════════════════════════════════════
     async fetchComponents() {
         if (!this.selectedType) { 
@@ -504,7 +503,7 @@ export default class DeploymentTool extends LightningElement {
                 console.warn('Skipping dependency check — sourceInstanceUrl or accessToken is null');
             }
 
-            // ── Step 1: Source Org se Retrieve ───────────────────────
+            // ── Step 1: Retrieve from the Source Org. ───────────────────────
             this.updateProgress('Step 1/5 — Retrieving from Source Org...', 5);
             const rawFiles = await this.batchedRetrieveByType();
             const allFiles = rawFiles.map(f => {
@@ -520,7 +519,7 @@ export default class DeploymentTool extends LightningElement {
                 return f;
             });
 
-            // ── Step 2: GitHub pe push (History ke liye) ─────────────
+            // ── Step 2: Push to GitHub (for history tracking).   ─────────────
             this.updateProgress('Step 2/5 — Pushing to GitHub (version history)...', 35);
             const branchName    = await this.setupGitBranch();
             const packageXml    = this.buildOrderedPackageXml();
@@ -530,21 +529,24 @@ export default class DeploymentTool extends LightningElement {
             ];
             await this.pushAllFilesWithRetry(allFilesToPush, branchName);
 
-            // ── Step 3: PR Create + Merge (GitHub history ke liye) ───
+            // ── Step 3: PR Create + Merge (for history tracking)) ───
             this.updateProgress('Step 3/5 — Creating PR for history...', 65);
 const uniqueTypes = [...new Set(this.selectedComponents.map(c => c.metadataType))].join(', ');
 const title       = `Deploy: ${uniqueTypes} (${this.selectedComponents.length} components)`;
 
-// Components list banao PR body ke liye
+// Create the components list for the PR body.
+
 const componentLines = this.selectedComponents
     .map(c => `• ${c.metadataType.padEnd(30)} → ${c.name}`)
     .join('\n');
 
-// Date format karo
+// Format the date.
+
 const now         = new Date();
 const deployDate  = `${now.getDate()} ${now.toLocaleString('en', { month: 'short' })} ${now.getFullYear()}`;
 
-// PR body banao
+// Create the PR body.
+
 const prBody = 
 `🚀 Deployment Summary
 ─────────────────────────────────────
