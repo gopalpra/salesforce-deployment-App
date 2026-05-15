@@ -560,7 +560,12 @@ ${componentLines}
 ─────────────────────────────────────
 🔗 Branch: ${branchName}`;
 
-const prNumber = await createPullRequest({ branchName, title, prBody });
+const prNumber = await createPullRequest({
+    branchName : branchName,      
+    title      : title,            
+    prBody     : prBody,           
+    userStoryId: this.userStoryId  
+});
 await mergePullRequest({ prNumber });
 
             // ── Step 4: Direct Deploy to Target Org ──────────────────
