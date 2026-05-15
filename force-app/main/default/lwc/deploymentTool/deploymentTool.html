@@ -56,19 +56,19 @@
                                             font-size:11px; font-weight:600; color:#706e6b;
                                             text-transform:uppercase; letter-spacing:.4px;
                                             padding-bottom:4px; padding-left:2px;">
-                                    <div style="width:175px; flex-shrink:0;">Metadata Type</div>
-                                    <div style="width:130px; flex-shrink:0;">Name</div>
-                                    <div style="width:130px; flex-shrink:0;">Label</div>
-                                    <div style="width:130px; flex-shrink:0;">Created By</div>
-                                    <div style="width:130px; flex-shrink:0;">Created Date</div>
-                                    <div style="width:130px; flex-shrink:0;">Modified By</div>
-                                    <div style="width:130px; flex-shrink:0;">Modified Date</div>
+                                    <div style="width:220px; flex-shrink:0;">Metadata Type</div>
+                                    <div style="width:200px; flex-shrink:0;">Name</div>
+                                    <div style="width:180px; flex-shrink:0;">Label</div>
+                                    <div style="width:180px; flex-shrink:0;">Created By</div>
+                                    <div style="width:180px; flex-shrink:0;">Created Date</div>
+                                    <div style="width:180px; flex-shrink:0;">Modified By</div>
+                                    <div style="width:180px; flex-shrink:0;">Modified Date</div>
                                 </div>
 
                                 <div style="display:flex; flex-wrap:nowrap; align-items:flex-end;
                                             gap:8px; overflow:visible; position:relative;">
 
-                                    <div style="width:175px; flex-shrink:0; overflow:visible; position:relative;">
+                                    <div style="width:220px; flex-shrink:0; overflow:visible; position:relative;">
                                         <lightning-combobox
                                             name="metadataType"
                                             label="Metadata Type"
@@ -79,7 +79,7 @@
                                         </lightning-combobox>
                                     </div>
 
-                                    <div style="width:130px; flex-shrink:0;">
+                                    <div style="width:160px; flex-shrink:0;">
                                         <lightning-input
                                             type="search"
                                             label="Name"
@@ -90,7 +90,7 @@
                                         </lightning-input>
                                     </div>
 
-                                    <div style="width:130px; flex-shrink:0;">
+                                    <div style="width:160px; flex-shrink:0;">
                                         <lightning-input
                                             type="search"
                                             label="Label"
@@ -101,7 +101,7 @@
                                         </lightning-input>
                                     </div>
 
-                                    <div style="width:130px; flex-shrink:0;">
+                                    <div style="width:160px; flex-shrink:0;">
                                         <lightning-input
                                             type="search"
                                             label="Created By"
@@ -112,7 +112,7 @@
                                         </lightning-input>
                                     </div>
 
-                                    <div style="width:130px; flex-shrink:0; overflow:visible; position:relative;">
+                                    <div style="width:150px; flex-shrink:0; overflow:visible; position:relative;">
                                         <lightning-input
                                             type="date"
                                             label="Created Date"
@@ -122,7 +122,7 @@
                                         </lightning-input>
                                     </div>
 
-                                    <div style="width:130px; flex-shrink:0;">
+                                    <div style="width:160px; flex-shrink:0;">
                                         <lightning-input
                                             type="search"
                                             label="Modified By"
@@ -133,7 +133,7 @@
                                         </lightning-input>
                                     </div>
 
-                                    <div style="width:130px; flex-shrink:0; overflow:visible; position:relative;">
+                                    <div style="width:150px; flex-shrink:0; overflow:visible; position:relative;">
                                         <lightning-input
                                             type="date"
                                             label="Modified Date"
@@ -269,7 +269,7 @@
                                     </template>
                                 </div>
 
-                            </template>
+            </template>
 
                         </div><!-- end Deploy panel -->
 
@@ -428,7 +428,7 @@
         <template if:true={showProgress}>
             <div class="slds-m-around_medium">
                 <lightning-progress-bar value={progressValue} size="large"></lightning-progress-bar>
-                <p class="slds-text-body_small slds-m-top_x-small">{progressLabel}</p>
+                <p class="slds-text-body_small slds-m-top_small">{progressLabel}</p>
             </div>
         </template>
 

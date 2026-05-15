@@ -24,7 +24,7 @@ public without sharing class EnvironmentManagerCtrl {
     }
 
     // ══════════════════════════════════════════════════
-    // NEW: Fast duplicate check — no HTTP call
+    //  Fast duplicate check — no HTTP call
     // ══════════════════════════════════════════════════
     @AuraEnabled
     public static Map<String, Object> checkEnvironmentExists(String environmentName) {

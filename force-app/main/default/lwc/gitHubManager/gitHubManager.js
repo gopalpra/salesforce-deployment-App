@@ -53,7 +53,7 @@ export default class gitHubManager extends LightningElement {
     handleRepoNameChange(event)       { this.repoName        = event.detail.value; }
 
     // ═══════════════════════════════════════════════════════════
-    // Initiate OAuth — repoOwner se metadata config dhundega
+    // Initiate OAuth — Fetch metadata configuration using the repository owner.
     // ═══════════════════════════════════════════════════════════
     async initiateOAuth() {
         const name  = this.connectionName.trim();
@@ -162,7 +162,7 @@ export default class gitHubManager extends LightningElement {
         this.connectingMessage = 'Completing GitHub authentication...';
 
         try {
-            // repoOwner already parameter mein hai — Apex same config use karega
+            // The repoOwner is already passed as a parameter — Apex will use the same configuration.
             const result = await exchangeCodeAndSave({
                 authCode       : data.code,
                 connectionName : this._pendingName,
@@ -203,7 +203,7 @@ export default class gitHubManager extends LightningElement {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Reconnect — fields pre-fill karke OAuth dobara chalao
+    // Reconnect — Pre-fill the fields and re-run the OAuth flow.
     // ═══════════════════════════════════════════════════════════
     async reconnectConnection(event) {
         const name  = event.currentTarget.dataset.name;
