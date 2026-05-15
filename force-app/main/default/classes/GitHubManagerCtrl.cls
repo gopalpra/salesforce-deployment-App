@@ -123,7 +123,7 @@ public without sharing class GitHubManagerCtrl {
 
             // Fetch GitHub username  
             String githubUsername = fetchGitHubUsername(accessToken);
-                //  Repo Owner aur logged in user same hone chahiye
+             
              if (!githubUsername.equalsIgnoreCase(repoOwner)) {
                 throw createException(
                    'You are logged in as "' + githubUsername + '" but Repo Owner is "' + repoOwner + '". Please login with the correct GitHub account.'
