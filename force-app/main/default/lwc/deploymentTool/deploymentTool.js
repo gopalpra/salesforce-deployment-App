@@ -240,7 +240,8 @@ export default class DeploymentTool extends LightningElement {
         this.isPrevCommitLoading = true; 
         this.prevCommitError = '';
         try {
-            const raw = await getPreviousCommits();
+            // ✅ FIXED — userStoryId pass kiya
+            const raw = await getPreviousCommits({ userStoryId: this.userStoryId });
             this.prevCommits = raw.map(pr => {
                 const groupedFiles = this.groupPrFiles(pr.files || []);
                 return { 
@@ -558,7 +559,7 @@ ${componentLines}
                 prBody     : prBody,           
                 userStoryId: this.userStoryId  
             });
-           await mergePullRequest({ prNumber, userStoryId: this.userStoryId });
+            await mergePullRequest({ prNumber, userStoryId: this.userStoryId });
 
             // ── Step 4: Direct Deploy to Target Org ──────────────────
             this.updateProgress('Step 4/5 — Deploying directly to Target Org...', 72);
@@ -590,12 +591,14 @@ ${componentLines}
                 };
             });
 
+            // ✅ FIXED — userStoryId pass kiya
             await saveDeploymentLog({ 
                 prNumber, 
                 prTitle      : title, 
                 branchName, 
                 deployStatus : deployResult.success ? 'Deployed' : 'Failed',
-                components   : componentData 
+                components   : componentData,
+                userStoryId  : this.userStoryId
             });
 
             // ── Final Status ──────────────────────────────────────────
@@ -819,7 +822,7 @@ ${componentLines}
     }
 
     // ══════════════════════════════════════════════════════════
-    // ✅ UPDATED — GIT BRANCH SETUP (userStoryId pass kiya)
+    // GIT BRANCH SETUP
     // ══════════════════════════════════════════════════════════
     async setupGitBranch() {
         const sha         = await getMainBranchSha({ userStoryId: this.userStoryId });
@@ -833,7 +836,7 @@ ${componentLines}
     }
 
     // ══════════════════════════════════════════════════════════
-    // ✅ UPDATED — PUSH FILES (userStoryId pass kiya)
+    // PUSH FILES
     // ══════════════════════════════════════════════════════════
     async pushAllFilesWithRetry(files, branchName) {
         const uniqueTypes = [...new Set(this.selectedComponents.map(c => c.metadataType))].join(', ');

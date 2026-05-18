@@ -160,7 +160,7 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ NEW — Get Default Branch Dynamically (main / master / custom)
+    // Get Default Branch Dynamically (main / master / custom)
     // ═══════════════════════════════════════════════════════════
     private static String getDefaultBranch(String accessToken, String owner, String repo) {
         try {
@@ -584,7 +584,7 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ UPDATED — GitHub: Get Main Branch SHA (dynamic default branch)
+    // GitHub: Get Main Branch SHA (dynamic default branch)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String getMainBranchSha(String userStoryId) {
@@ -610,7 +610,7 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ UPDATED — GitHub: Create Feature Branch (dynamic default branch)
+    // GitHub: Create Feature Branch (dynamic default branch)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String createFeatureBranch(String branchName, String sha, String userStoryId) {
@@ -631,7 +631,7 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ UPDATED — GitHub: Push Multiple Files (dynamic default branch)
+    // GitHub: Push Multiple Files (dynamic default branch)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static Boolean pushMultipleFilesToGitHub(String branchName, String commitMessage, List<Map<String, String>> files, String userStoryId) {
@@ -696,7 +696,7 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ UPDATED — GitHub: Create Pull Request (dynamic base branch)
+    // GitHub: Create Pull Request (dynamic base branch)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String createPullRequest(
@@ -740,7 +740,7 @@ public without sharing class DeploymentToolCtrl {
                 new Map<String, Object>{
                     'title' => title,
                     'head'  => branchName,
-                    'base'  => defaultBranch,   // ✅ dynamic — main / master / custom
+                    'base'  => defaultBranch,
                     'body'  => prBody
                 });
             checkGitHubRateLimit(res, 'createPullRequest');
@@ -757,7 +757,7 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ UPDATED — GitHub: Merge Pull Request (userStoryId + dynamic branch)
+    // GitHub: Merge Pull Request
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static Boolean mergePullRequest(String prNumber, String userStoryId) {
@@ -781,12 +781,12 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ UPDATED — GitHub: Get Previous Commits (dynamic default branch)
+    // ✅ FIXED — GitHub: Get Previous Commits (userStoryId dynamic)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-    public static List<Map<String, Object>> getPreviousCommits() {
+    public static List<Map<String, Object>> getPreviousCommits(String userStoryId) {
         try {
-            GitHub_Connection__c conn = getActiveGitHubConnection();
+            GitHub_Connection__c conn = getConnectionFromUserStory(userStoryId);
             HttpResponse res = githubGet(conn.Access_Token__c,
                 repoPath(conn.Repo_Owner__c, conn.Repo_Name__c,
                     '/pulls?state=closed&per_page=20&sort=updated&direction=desc'));
@@ -836,14 +836,15 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Save Deployment Log
+    // ✅ FIXED — Save Deployment Log (userStoryId dynamic)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String saveDeploymentLog(
             String prNumber, String prTitle, String branchName,
-            String deployStatus, List<Map<String, String>> components) {
+            String deployStatus, List<Map<String, String>> components,
+            String userStoryId) {
         try {
-            GitHub_Connection__c conn = getActiveGitHubConnection();
+            GitHub_Connection__c conn = getConnectionFromUserStory(userStoryId);
 
             Deployment_Log__c log = new Deployment_Log__c(
                 PR_Number__c        = prNumber,
@@ -878,12 +879,12 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ UPDATED — Sync Deployment Status (dynamic branch support)
+    // ✅ FIXED — Sync Deployment Status (userStoryId dynamic)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-    public static String syncDeploymentStatus(String logId, String branchName) {
+    public static String syncDeploymentStatus(String logId, String branchName, String userStoryId) {
         try {
-            GitHub_Connection__c conn        = getActiveGitHubConnection();
+            GitHub_Connection__c conn        = getConnectionFromUserStory(userStoryId);
             String               finalStatus = 'Failed';
             HttpResponse         res         = githubGet(conn.Access_Token__c,
                 repoPath(conn.Repo_Owner__c, conn.Repo_Name__c,
