@@ -101,7 +101,6 @@ export default class DeploymentTool extends LightningElement {
         this.orgLoadError = '';
         this.orgsReady    = false;
         try {
-           
             const orgDetails = await getOrgDetailsFromUserStory({ 
                 userStoryId: this.userStoryId 
             });
@@ -316,8 +315,7 @@ export default class DeploymentTool extends LightningElement {
     }
 
     // ══════════════════════════════════════════════════════════
-    // FETCH COMPONENTS — Dynamic fetch from the source org.
-
+    // FETCH COMPONENTS
     // ══════════════════════════════════════════════════════════
     async fetchComponents() {
         if (!this.selectedType) { 
@@ -446,7 +444,7 @@ export default class DeploymentTool extends LightningElement {
     }
 
     // ══════════════════════════════════════════════════════════
-    // MAIN DEPLOY FLOW — Direct Deploy to Target Org
+    // MAIN DEPLOY FLOW
     // ══════════════════════════════════════════════════════════
     async deploySelected() {
         if (!this.selectedComponents.length) { 
@@ -503,7 +501,7 @@ export default class DeploymentTool extends LightningElement {
                 console.warn('Skipping dependency check — sourceInstanceUrl or accessToken is null');
             }
 
-            // ── Step 1: Retrieve from the Source Org. ───────────────────────
+            // ── Step 1: Retrieve from Source Org ─────────────────────
             this.updateProgress('Step 1/5 — Retrieving from Source Org...', 5);
             const rawFiles = await this.batchedRetrieveByType();
             const allFiles = rawFiles.map(f => {
@@ -519,7 +517,7 @@ export default class DeploymentTool extends LightningElement {
                 return f;
             });
 
-            // ── Step 2: Push to GitHub (for history tracking).   ─────────────
+            // ── Step 2: Push to GitHub ────────────────────────────────
             this.updateProgress('Step 2/5 — Pushing to GitHub (version history)...', 35);
             const branchName    = await this.setupGitBranch();
             const packageXml    = this.buildOrderedPackageXml();
@@ -529,25 +527,19 @@ export default class DeploymentTool extends LightningElement {
             ];
             await this.pushAllFilesWithRetry(allFilesToPush, branchName);
 
-            // ── Step 3: PR Create + Merge (for history tracking)) ───
+            // ── Step 3: PR Create + Merge ─────────────────────────────
             this.updateProgress('Step 3/5 — Creating PR for history...', 65);
-const uniqueTypes = [...new Set(this.selectedComponents.map(c => c.metadataType))].join(', ');
-const title       = `Deploy: ${uniqueTypes} (${this.selectedComponents.length} components)`;
+            const uniqueTypes = [...new Set(this.selectedComponents.map(c => c.metadataType))].join(', ');
+            const title       = `Deploy: ${uniqueTypes} (${this.selectedComponents.length} components)`;
 
-// Create the components list for the PR body.
+            const componentLines = this.selectedComponents
+                .map(c => `• ${c.metadataType.padEnd(30)} → ${c.name}`)
+                .join('\n');
 
-const componentLines = this.selectedComponents
-    .map(c => `• ${c.metadataType.padEnd(30)} → ${c.name}`)
-    .join('\n');
+            const now         = new Date();
+            const deployDate  = `${now.getDate()} ${now.toLocaleString('en', { month: 'short' })} ${now.getFullYear()}`;
 
-// Format the date.
-
-const now         = new Date();
-const deployDate  = `${now.getDate()} ${now.toLocaleString('en', { month: 'short' })} ${now.getFullYear()}`;
-
-// Create the PR body.
-
-const prBody = 
+            const prBody = 
 `🚀 Deployment Summary
 ─────────────────────────────────────
 📤 Source Org  : ${this.sourceOrgName}
@@ -560,13 +552,13 @@ ${componentLines}
 ─────────────────────────────────────
 🔗 Branch: ${branchName}`;
 
-const prNumber = await createPullRequest({
-    branchName : branchName,      
-    title      : title,            
-    prBody     : prBody,           
-    userStoryId: this.userStoryId  
-});
-await mergePullRequest({ prNumber });
+            const prNumber = await createPullRequest({
+                branchName : branchName,      
+                title      : title,            
+                prBody     : prBody,           
+                userStoryId: this.userStoryId  
+            });
+           await mergePullRequest({ prNumber, userStoryId: this.userStoryId });
 
             // ── Step 4: Direct Deploy to Target Org ──────────────────
             this.updateProgress('Step 4/5 — Deploying directly to Target Org...', 72);
@@ -635,11 +627,10 @@ await mergePullRequest({ prNumber });
     }
 
     // ══════════════════════════════════════════════════════════
-    // BUILD DEPLOY ZIP — package.xml + all files
+    // BUILD DEPLOY ZIP
     // ══════════════════════════════════════════════════════════
     async buildDeployZip(files, packageXml) {
         const zip = new JSZip();
-        // package.xml root mein
         zip.file('package.xml', packageXml);
         for (const f of files) {
             if (f.path === 'package.xml') continue;
@@ -727,7 +718,7 @@ await mergePullRequest({ prNumber });
     }
 
     // ══════════════════════════════════════════════════════════
-    // BATCHED RETRIEVE — Source org se dynamic
+    // BATCHED RETRIEVE
     // ══════════════════════════════════════════════════════════
     async batchedRetrieveByType() {
         const byType = {};
@@ -828,19 +819,22 @@ await mergePullRequest({ prNumber });
     }
 
     // ══════════════════════════════════════════════════════════
-    // GIT BRANCH SETUP
+    // ✅ UPDATED — GIT BRANCH SETUP (userStoryId pass kiya)
     // ══════════════════════════════════════════════════════════
     async setupGitBranch() {
-        const sha         = await getMainBranchSha();
+        const sha         = await getMainBranchSha({ userStoryId: this.userStoryId });
         const uniqueTypes = [...new Set(this.selectedComponents.map(c => c.metadataType))]
             .join('_').substring(0, 40);
         const safeName    = this.selectedComponents[0].name
             .replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
         const branchName  = `deploy/${uniqueTypes}-${safeName}-${Date.now()}`;
-        await createFeatureBranch({ branchName, sha });
+        await createFeatureBranch({ branchName, sha, userStoryId: this.userStoryId });
         return branchName;
     }
 
+    // ══════════════════════════════════════════════════════════
+    // ✅ UPDATED — PUSH FILES (userStoryId pass kiya)
+    // ══════════════════════════════════════════════════════════
     async pushAllFilesWithRetry(files, branchName) {
         const uniqueTypes = [...new Set(this.selectedComponents.map(c => c.metadataType))].join(', ');
         const commitMsg   = `Deploy: ${uniqueTypes} — ${this.selectedComponents.length} components`;
@@ -849,7 +843,8 @@ await mergePullRequest({ prNumber });
             await pushMultipleFilesToGitHub({ 
                 branchName, 
                 commitMessage : commitMsg, 
-                files         : files.map(f => ({ filePath: f.path, base64Content: f.content })) 
+                files         : files.map(f => ({ filePath: f.path, base64Content: f.content })),
+                userStoryId   : this.userStoryId
             });
         } catch (error) {
             throw new Error('Bulk push failed: ' + this.getError(error));

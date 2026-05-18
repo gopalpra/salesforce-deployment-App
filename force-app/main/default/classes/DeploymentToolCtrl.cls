@@ -101,8 +101,7 @@ public without sharing class DeploymentToolCtrl {
     };
 
     // ═══════════════════════════════════════════════════════════
-    // DYNAMIC GITHUB CONNECTION
-    // Replaces hardcoded GITHUB_NC, GITHUB_OWNER, GITHUB_REPO
+    // DYNAMIC GITHUB CONNECTION — Fallback: last modified connected
     // ═══════════════════════════════════════════════════════════
     private static GitHub_Connection__c getActiveGitHubConnection() {
         List<GitHub_Connection__c> conns = [
@@ -118,6 +117,61 @@ public without sharing class DeploymentToolCtrl {
             );
         }
         return conns[0];
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Get GitHub Connection from User Story
+    // ═══════════════════════════════════════════════════════════
+    private static GitHub_Connection__c getConnectionFromUserStory(String userStoryId) {
+        if (String.isBlank(userStoryId)) {
+            return getActiveGitHubConnection();
+        }
+
+        List<User_Story_Name__c> stories = [
+            SELECT GitHub_Connection__c,
+                   GitHub_Connection__r.Repo_Owner__c,
+                   GitHub_Connection__r.Repo_Name__c,
+                   GitHub_Connection__r.Access_Token__c,
+                   GitHub_Connection__r.Status__c
+            FROM User_Story_Name__c
+            WHERE Id = :userStoryId
+            LIMIT 1
+        ];
+
+        if (stories.isEmpty()) {
+            throw createAuraException('User Story not found.');
+        }
+
+        if (stories[0].GitHub_Connection__c == null) {
+            throw createAuraException(
+                '❌ No GitHub Connection assigned to this User Story. ' +
+                'Please edit the User Story and select a GitHub Connection before deploying.'
+            );
+        }
+
+        if (stories[0].GitHub_Connection__r.Status__c != 'Connected') {
+            throw createAuraException(
+                '❌ The GitHub Connection assigned to this User Story is not active. ' +
+                'Please go to GitHub Manager and reconnect it.'
+            );
+        }
+
+        return stories[0].GitHub_Connection__r;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ✅ NEW — Get Default Branch Dynamically (main / master / custom)
+    // ═══════════════════════════════════════════════════════════
+    private static String getDefaultBranch(String accessToken, String owner, String repo) {
+        try {
+            HttpResponse res = githubGet(accessToken, repoPath(owner, repo, ''));
+            if (res.getStatusCode() == 200) {
+                Map<String, Object> data = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+                String branch = String.valueOf(data.get('default_branch'));
+                return (String.isBlank(branch) || branch == 'null') ? 'main' : branch;
+            }
+        } catch (Exception e) {}
+        return 'main'; // fallback
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -530,17 +584,20 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GitHub — Get Main Branch SHA
+    // ✅ UPDATED — GitHub: Get Main Branch SHA (dynamic default branch)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-    public static String getMainBranchSha() {
+    public static String getMainBranchSha(String userStoryId) {
         try {
-            GitHub_Connection__c conn = getActiveGitHubConnection();
+            GitHub_Connection__c conn          = getConnectionFromUserStory(userStoryId);
+            String               defaultBranch = getDefaultBranch(conn.Access_Token__c, conn.Repo_Owner__c, conn.Repo_Name__c);
+
             HttpResponse res = githubGet(conn.Access_Token__c,
-                repoPath(conn.Repo_Owner__c, conn.Repo_Name__c, '/git/ref/heads/main'));
+                repoPath(conn.Repo_Owner__c, conn.Repo_Name__c, '/git/ref/heads/' + defaultBranch));
             checkGitHubRateLimit(res, 'getMainBranchSha');
             if (res.getStatusCode() != 200)
                 throw createAuraException('GitHub SHA fetch failed (' + res.getStatusCode() + '): ' + res.getBody());
+
             Map<String, Object> parsed = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
             String sha = String.valueOf(((Map<String, Object>) parsed.get('object')).get('sha'));
             if (String.isBlank(sha) || sha == 'null') throw createAuraException('SHA value is empty.');
@@ -553,12 +610,12 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GitHub — Create Feature Branch
+    // ✅ UPDATED — GitHub: Create Feature Branch (dynamic default branch)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-    public static String createFeatureBranch(String branchName, String sha) {
+    public static String createFeatureBranch(String branchName, String sha, String userStoryId) {
         try {
-            GitHub_Connection__c conn = getActiveGitHubConnection();
+            GitHub_Connection__c conn = getConnectionFromUserStory(userStoryId);
             HttpResponse res = githubPost(conn.Access_Token__c, 'POST',
                 repoPath(conn.Repo_Owner__c, conn.Repo_Name__c, '/git/refs'),
                 new Map<String, String>{ 'ref' => 'refs/heads/' + branchName, 'sha' => sha });
@@ -574,12 +631,12 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GitHub — Push Multiple Files (with batching)
+    // ✅ UPDATED — GitHub: Push Multiple Files (dynamic default branch)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-    public static Boolean pushMultipleFilesToGitHub(String branchName, String commitMessage, List<Map<String, String>> files) {
+    public static Boolean pushMultipleFilesToGitHub(String branchName, String commitMessage, List<Map<String, String>> files, String userStoryId) {
         try {
-            GitHub_Connection__c conn  = getActiveGitHubConnection();
+            GitHub_Connection__c conn  = getConnectionFromUserStory(userStoryId);
             String               owner = conn.Repo_Owner__c;
             String               repo  = conn.Repo_Name__c;
             String               token = conn.Access_Token__c;
@@ -639,15 +696,15 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GitHub — Create Pull Request
-    // ✅ userStoryId added — User Story info auto-populated in PR
+    // ✅ UPDATED — GitHub: Create Pull Request (dynamic base branch)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String createPullRequest(
             String branchName, String title, String prBody, String userStoryId) {
         try {
-            GitHub_Connection__c conn       = getActiveGitHubConnection();
-            String               deployedBy = UserInfo.getName();
+            GitHub_Connection__c conn          = getConnectionFromUserStory(userStoryId);
+            String               defaultBranch = getDefaultBranch(conn.Access_Token__c, conn.Repo_Owner__c, conn.Repo_Name__c);
+            String               deployedBy    = UserInfo.getName();
 
             if (String.isNotBlank(userStoryId)) {
                 try {
@@ -681,8 +738,10 @@ public without sharing class DeploymentToolCtrl {
             HttpResponse res = githubPost(conn.Access_Token__c, 'POST',
                 repoPath(conn.Repo_Owner__c, conn.Repo_Name__c, '/pulls'),
                 new Map<String, Object>{
-                    'title' => title, 'head' => branchName,
-                    'base'  => 'main', 'body' => prBody
+                    'title' => title,
+                    'head'  => branchName,
+                    'base'  => defaultBranch,   // ✅ dynamic — main / master / custom
+                    'body'  => prBody
                 });
             checkGitHubRateLimit(res, 'createPullRequest');
             if (res.getStatusCode() != 201)
@@ -698,15 +757,18 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GitHub — Merge Pull Request
+    // ✅ UPDATED — GitHub: Merge Pull Request (userStoryId + dynamic branch)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-    public static Boolean mergePullRequest(String prNumber) {
+    public static Boolean mergePullRequest(String prNumber, String userStoryId) {
         try {
-            GitHub_Connection__c conn = getActiveGitHubConnection();
+            GitHub_Connection__c conn = getConnectionFromUserStory(userStoryId);
             HttpResponse res = githubPost(conn.Access_Token__c, 'PUT',
                 repoPath(conn.Repo_Owner__c, conn.Repo_Name__c, '/pulls/' + prNumber + '/merge'),
-                new Map<String, String>{ 'commit_title' => 'Auto-merge by Deployment Tool', 'merge_method' => 'squash' });
+                new Map<String, String>{
+                    'commit_title' => 'Auto-merge by Deployment Tool',
+                    'merge_method' => 'squash'
+                });
             checkGitHubRateLimit(res, 'mergePullRequest');
             if (res.getStatusCode() != 200)
                 throw createAuraException('PR merge failed (' + res.getStatusCode() + '): ' + res.getBody());
@@ -719,7 +781,7 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GitHub — Get Previous Commits
+    // ✅ UPDATED — GitHub: Get Previous Commits (dynamic default branch)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static List<Map<String, Object>> getPreviousCommits() {
@@ -737,12 +799,12 @@ public without sharing class DeploymentToolCtrl {
             for (Object prObj : pullRequests) {
                 Map<String, Object> pr = (Map<String, Object>) prObj;
                 if (pr.get('merged_at') == null) continue;
-                Integer prNumber = (Integer) pr.get('number');
+                Integer prNum = (Integer) pr.get('number');
                 result.add(new Map<String, Object>{
-                    'number'   => prNumber,
+                    'number'   => prNum,
                     'title'    => String.valueOf(pr.get('title')),
                     'mergedAt' => formatGitHubDate(String.valueOf(pr.get('merged_at'))),
-                    'files'    => getPrFiles(conn.Access_Token__c, conn.Repo_Owner__c, conn.Repo_Name__c, prNumber)
+                    'files'    => getPrFiles(conn.Access_Token__c, conn.Repo_Owner__c, conn.Repo_Name__c, prNum)
                 });
             }
             return result;
@@ -774,7 +836,7 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Save Deployment Log — dynamic repo URL
+    // Save Deployment Log
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String saveDeploymentLog(
@@ -816,7 +878,7 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Sync Deployment Status
+    // ✅ UPDATED — Sync Deployment Status (dynamic branch support)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String syncDeploymentStatus(String logId, String branchName) {
