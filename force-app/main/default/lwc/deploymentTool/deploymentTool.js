@@ -89,8 +89,55 @@ export default class DeploymentTool extends LightningElement {
         const storyId = pageRef?.state?.c__userStoryId;
         if (storyId && storyId !== this.userStoryId) {
             this.userStoryId = storyId;
-            await this.loadOrgsFromUserStory();
+            this._resetAllState();              // ← poora state reset pehle
+            await this.loadOrgsFromUserStory(); // ← phir fresh load
         }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // FULL STATE RESET — naya User Story aane par sab saaf
+    // ══════════════════════════════════════════════════════════
+    _resetAllState() {
+        // ── Components & selection ───────────────────────────
+        this.selectedComponents = [];
+        this.components         = [];
+        this.hasComponents      = false;
+        this.selectedType       = '';
+
+        // ── Status / progress ────────────────────────────────
+        this.statusMessage = '';
+        this.statusClass   = 'slds-text-color_success';
+        this.showProgress  = false;
+        this.progressValue = 0;
+        this.progressLabel = '';
+        this.isLoading     = false;
+
+        // ── Filters ──────────────────────────────────────────
+        this.filterName          = '';
+        this.filterLabel         = '';
+        this.filterCreatedBy     = '';
+        this.filterModifiedBy    = '';
+        this.filterModifiedAfter = '';
+        this.filterCreatedAfter  = '';
+
+        // ── Previous commits panel ───────────────────────────
+        this.prevCommits         = [];
+        this.prevCommitError     = '';
+        this.showPrevCommitPanel = false;
+        this.isPrevCommitLoading = false;
+
+        // ── Tab ──────────────────────────────────────────────
+        this.activeTab = 'findChanges';
+
+        // ── Org state (will be reloaded fresh) ───────────────
+        this.orgsReady         = false;
+        this.orgLoadError      = '';
+        this.sourceOrgName     = '';
+        this.targetOrgName     = '';
+        this.sourceAccessToken = null;
+        this.sourceInstanceUrl = null;
+        this.targetAccessToken = null;
+        this.targetInstanceUrl = null;
     }
 
     // ══════════════════════════════════════════════════════════
@@ -101,8 +148,8 @@ export default class DeploymentTool extends LightningElement {
         this.orgLoadError = '';
         this.orgsReady    = false;
         try {
-            const orgDetails = await getOrgDetailsFromUserStory({ 
-                userStoryId: this.userStoryId 
+            const orgDetails = await getOrgDetailsFromUserStory({
+                userStoryId: this.userStoryId
             });
 
             this.sourceOrgName = orgDetails.sourceOrgName || 'Source Org';
@@ -148,7 +195,7 @@ export default class DeploymentTool extends LightningElement {
     }
 
     get orgBannerClass() {
-        if (this.orgLoadError) 
+        if (this.orgLoadError)
             return 'slds-notify slds-notify_alert slds-theme_error slds-m-bottom_small';
         return 'slds-notify slds-notify_alert slds-theme_info slds-m-bottom_small';
     }
@@ -180,12 +227,12 @@ export default class DeploymentTool extends LightningElement {
         if (this.filterCreatedAfter?.trim())  { const cutoff = this.filterCreatedAfter.trim();           list = list.filter(c => c.createdDate && c.createdDate >= cutoff); }
         return list;
     }
-    get hasActiveFilters()          { return !!(this.filterName?.trim() || this.filterLabel?.trim() || this.filterCreatedBy?.trim() || this.filterModifiedBy?.trim() || this.filterModifiedAfter?.trim() || this.filterCreatedAfter?.trim()); }
-    get noFilteredResults()         { return this.hasComponents && this.filteredComponents.length === 0; }
-    get filterSummaryText()         { if (!this.hasComponents) return 'Fetch components to see results'; return `Showing ${this.filteredComponents.length} of ${this.components.length} components`; }
-    get hasSelectedComponents()     { return this.selectedComponents.length > 0; }
-    get noItemsCheckedInSelected()  { return !this.selectedComponents.some(c => c.markedForRemoval); }
-    get hasPrevCommits()            { return this.prevCommits.length > 0; }
+    get hasActiveFilters()         { return !!(this.filterName?.trim() || this.filterLabel?.trim() || this.filterCreatedBy?.trim() || this.filterModifiedBy?.trim() || this.filterModifiedAfter?.trim() || this.filterCreatedAfter?.trim()); }
+    get noFilteredResults()        { return this.hasComponents && this.filteredComponents.length === 0; }
+    get filterSummaryText()        { if (!this.hasComponents) return 'Fetch components to see results'; return `Showing ${this.filteredComponents.length} of ${this.components.length} components`; }
+    get hasSelectedComponents()    { return this.selectedComponents.length > 0; }
+    get noItemsCheckedInSelected() { return !this.selectedComponents.some(c => c.markedForRemoval); }
+    get hasPrevCommits()           { return this.prevCommits.length > 0; }
 
     // ── Metadata Options ──────────────────────────────────────
     metadataOptions = [
@@ -231,29 +278,40 @@ export default class DeploymentTool extends LightningElement {
     // ══════════════════════════════════════════════════════════
     async togglePrevCommitPanel() {
         this.showPrevCommitPanel = !this.showPrevCommitPanel;
-        if (this.showPrevCommitPanel && this.prevCommits.length === 0) {
+        if (this.showPrevCommitPanel) {
+            // Har baar fresh load karo — puraana data nahi dikhana
+            this.prevCommits     = [];
+            this.prevCommitError = '';
             await this.loadPreviousCommits();
         }
     }
 
     async loadPreviousCommits() {
-        this.isPrevCommitLoading = true; 
-        this.prevCommitError = '';
+        if (!this.orgsReady && !this.userStoryId) {
+            this.prevCommitError = 'User Story not loaded yet.';
+            return;
+        }
+        this.isPrevCommitLoading = true;
+        this.prevCommitError     = '';
         try {
-            // ✅ FIXED — userStoryId pass kiya
             const raw = await getPreviousCommits({ userStoryId: this.userStoryId });
             this.prevCommits = raw.map(pr => {
                 const groupedFiles = this.groupPrFiles(pr.files || []);
-                return { 
-                    number: pr.number, title: pr.title, mergedAt: pr.mergedAt, 
-                    files: groupedFiles, fileCount: groupedFiles.length, 
-                    expanded: false, expandIcon: 'utility:chevronright' 
+                return {
+                    number     : pr.number,
+                    title      : pr.title,
+                    mergedAt   : pr.mergedAt,
+                    files      : groupedFiles,
+                    fileCount  : groupedFiles.length,
+                    expanded   : false,
+                    expandIcon : 'utility:chevronright'
                 };
             });
-        } catch (e) { 
-            this.prevCommitError = this.getError(e); 
-        } finally { 
-            this.isPrevCommitLoading = false; 
+        } catch (e) {
+            this.prevCommitError = this.getError(e);
+            this.prevCommits     = [];
+        } finally {
+            this.isPrevCommitLoading = false;
         }
     }
 
@@ -262,26 +320,28 @@ export default class DeploymentTool extends LightningElement {
         for (const file of files) {
             const key = file.name;
             if (!seen.has(key)) {
-                seen.set(key, { 
-                    path: file.path, name: file.name, 
-                    metadataType: file.metadataType, 
-                    fileNames: [this.getFileName(file.path)] 
+                seen.set(key, {
+                    path         : file.path,
+                    name         : file.name,
+                    metadataType : file.metadataType,
+                    fileNames    : [this.getFileName(file.path)]
                 });
             } else {
                 seen.get(key).fileNames.push(this.getFileName(file.path));
             }
         }
-        return Array.from(seen.values()).map(f => ({ 
-            ...f, hasMultiple: f.fileNames.length > 1, 
-            fileCount: f.fileNames.length, 
-            fileLabel: f.fileNames.join(' + ') 
+        return Array.from(seen.values()).map(f => ({
+            ...f,
+            hasMultiple : f.fileNames.length > 1,
+            fileCount   : f.fileNames.length,
+            fileLabel   : f.fileNames.join(' + ')
         }));
     }
 
-    getFileName(filePath) { 
-        if (!filePath) return ''; 
-        const parts = filePath.split('/'); 
-        return parts[parts.length - 1]; 
+    getFileName(filePath) {
+        if (!filePath) return '';
+        const parts = filePath.split('/');
+        return parts[parts.length - 1];
     }
 
     togglePrExpand(event) {
@@ -319,17 +379,17 @@ export default class DeploymentTool extends LightningElement {
     // FETCH COMPONENTS
     // ══════════════════════════════════════════════════════════
     async fetchComponents() {
-        if (!this.selectedType) { 
-            this.setStatus('Please select a metadata type.', false); 
-            return; 
+        if (!this.selectedType) {
+            this.setStatus('Please select a metadata type.', false);
+            return;
         }
-        if (!this.orgsReady) { 
-            this.setStatus('Org details not loaded yet. Please wait or check User Story.', false); 
-            return; 
+        if (!this.orgsReady) {
+            this.setStatus('Org details not loaded yet. Please wait or check User Story.', false);
+            return;
         }
-        this.isLoading = true; 
-        this.statusMessage = ''; 
-        this.showProgress = false;
+        this.isLoading     = true;
+        this.statusMessage = '';
+        this.showProgress  = false;
         try {
             const raw = await getComponentsDynamic({
                 metadataType : this.selectedType,
@@ -363,13 +423,14 @@ export default class DeploymentTool extends LightningElement {
         if (checked) {
             if (!this.selectedComponents.some(c => c.id === id)) {
                 const src = this.components.find(c => c.id === id) || {};
-                this.selectedComponents = [...this.selectedComponents, { 
-                    id, name, metadataType: this.selectedType, markedForRemoval: false, rowNum: 0, 
-                    label: src.label || '', createdBy: src.createdBy || '', 
-                    lastModifiedBy: src.lastModifiedBy || '', 
-                    lastModifiedByDisplay: src.lastModifiedByDisplay || '', 
-                    lastModifiedDate: src.lastModifiedDate || '', 
-                    createdDate: src.createdDate || '' 
+                this.selectedComponents = [...this.selectedComponents, {
+                    id, name, metadataType: this.selectedType, markedForRemoval: false, rowNum: 0,
+                    label                : src.label || '',
+                    createdBy            : src.createdBy || '',
+                    lastModifiedBy       : src.lastModifiedBy || '',
+                    lastModifiedByDisplay: src.lastModifiedByDisplay || '',
+                    lastModifiedDate     : src.lastModifiedDate || '',
+                    createdDate          : src.createdDate || ''
                 }];
                 this._reNumberRows();
             }
@@ -387,16 +448,22 @@ export default class DeploymentTool extends LightningElement {
         });
         const newOnes = filtered
             .filter(c => !this.selectedComponents.some(s => s.id === c.id))
-            .map(c => ({ 
-                id: c.id, name: c.name, metadataType: this.selectedType, 
-                markedForRemoval: false, rowNum: 0, label: c.label || '', 
-                createdBy: c.createdBy || '', lastModifiedBy: c.lastModifiedBy || '', 
-                lastModifiedByDisplay: c.lastModifiedByDisplay || '', 
-                lastModifiedDate: c.lastModifiedDate || '', createdDate: c.createdDate || '' 
+            .map(c => ({
+                id                   : c.id,
+                name                 : c.name,
+                metadataType         : this.selectedType,
+                markedForRemoval     : false,
+                rowNum               : 0,
+                label                : c.label || '',
+                createdBy            : c.createdBy || '',
+                lastModifiedBy       : c.lastModifiedBy || '',
+                lastModifiedByDisplay: c.lastModifiedByDisplay || '',
+                lastModifiedDate     : c.lastModifiedDate || '',
+                createdDate          : c.createdDate || ''
             }));
-        if (newOnes.length > 0) { 
-            this.selectedComponents = [...this.selectedComponents, ...newOnes]; 
-            this._reNumberRows(); 
+        if (newOnes.length > 0) {
+            this.selectedComponents = [...this.selectedComponents, ...newOnes];
+            this._reNumberRows();
         }
     }
 
@@ -407,9 +474,9 @@ export default class DeploymentTool extends LightningElement {
         this.components = this.components.map(c => filteredIds.has(c.id) ? { ...c, checked: false } : c);
     }
 
-    handleRemovalCheck(event) { 
-        const id = event.target.dataset.id, checked = event.target.checked; 
-        this.selectedComponents = this.selectedComponents.map(c => c.id === id ? { ...c, markedForRemoval: checked } : c); 
+    handleRemovalCheck(event) {
+        const id = event.target.dataset.id, checked = event.target.checked;
+        this.selectedComponents = this.selectedComponents.map(c => c.id === id ? { ...c, markedForRemoval: checked } : c);
     }
 
     removeCheckedFromSelected() {
@@ -417,14 +484,14 @@ export default class DeploymentTool extends LightningElement {
         this.selectedComponents = this.selectedComponents.filter(c => !c.markedForRemoval);
         this._reNumberRows();
         this.components = this.components.map(c => removedIds.includes(c.id) ? { ...c, checked: false } : c);
-        if (this.selectedComponents.length === 0) { 
-            this.statusMessage = ''; this.showProgress = false; 
-            this.progressValue = 0; this.progressLabel = ''; 
+        if (this.selectedComponents.length === 0) {
+            this.statusMessage = ''; this.showProgress = false;
+            this.progressValue = 0;  this.progressLabel = '';
         }
     }
 
-    _reNumberRows() { 
-        this.selectedComponents = this.selectedComponents.map((c, i) => ({ ...c, rowNum: i + 1 })); 
+    _reNumberRows() {
+        this.selectedComponents = this.selectedComponents.map((c, i) => ({ ...c, rowNum: i + 1 }));
     }
 
     // ══════════════════════════════════════════════════════════
@@ -448,20 +515,20 @@ export default class DeploymentTool extends LightningElement {
     // MAIN DEPLOY FLOW
     // ══════════════════════════════════════════════════════════
     async deploySelected() {
-        if (!this.selectedComponents.length) { 
-            this.setStatus('Please select at least one component.', false); 
-            return; 
+        if (!this.selectedComponents.length) {
+            this.setStatus('Please select at least one component.', false);
+            return;
         }
-        if (!this.jsZipLoaded) { 
-            this.setStatus('JSZip still loading, please wait...', false); 
-            return; 
+        if (!this.jsZipLoaded) {
+            this.setStatus('JSZip still loading, please wait...', false);
+            return;
         }
-        if (!this.orgsReady) { 
-            this.setStatus('Org details not loaded. Please check User Story.', false); 
-            return; 
+        if (!this.orgsReady) {
+            this.setStatus('Org details not loaded. Please check User Story.', false);
+            return;
         }
 
-        this.isLoading   = true; 
+        this.isLoading    = true;
         this.showProgress = true;
 
         try {
@@ -472,13 +539,13 @@ export default class DeploymentTool extends LightningElement {
                 .filter(id => id && !id.startsWith('dep_'));
 
             if (compIds.length > 0 && this.sourceInstanceUrl && this.sourceAccessToken) {
-                const deps = await getComponentDependencies({ 
+                const deps = await getComponentDependencies({
                     componentIds: compIds,
-                    accessToken: this.sourceAccessToken,
-                    instanceUrl: this.sourceInstanceUrl
+                    accessToken : this.sourceAccessToken,
+                    instanceUrl : this.sourceInstanceUrl
                 });
-                const newDeps = deps.filter(d => 
-                    !this.selectedComponents.some(sc => 
+                const newDeps = deps.filter(d =>
+                    !this.selectedComponents.some(sc =>
                         sc.name === d.name && sc.metadataType === d.metadataType
                     )
                 );
@@ -488,11 +555,18 @@ export default class DeploymentTool extends LightningElement {
                         `Missing Dependencies Found!\n\n${newDeps.length} components needed ` +
                         `(e.g., ${sampleName}).\n\nAdd them automatically?`
                     )) {
-                        const formattedDeps = newDeps.map((d, index) => ({ 
-                            id: 'dep_' + Date.now() + index, name: d.name, 
-                            metadataType: d.metadataType, markedForRemoval: false, rowNum: 0, 
-                            label: '', createdBy: '', lastModifiedBy: '', 
-                            lastModifiedByDisplay: '', lastModifiedDate: '', createdDate: '' 
+                        const formattedDeps = newDeps.map((d, index) => ({
+                            id               : 'dep_' + Date.now() + index,
+                            name             : d.name,
+                            metadataType     : d.metadataType,
+                            markedForRemoval : false,
+                            rowNum           : 0,
+                            label            : '',
+                            createdBy        : '',
+                            lastModifiedBy   : '',
+                            lastModifiedByDisplay: '',
+                            lastModifiedDate : '',
+                            createdDate      : ''
                         }));
                         this.selectedComponents = [...this.selectedComponents, ...formattedDeps];
                         this._reNumberRows();
@@ -509,9 +583,9 @@ export default class DeploymentTool extends LightningElement {
                 if (f.path.includes('/objects/') && f.path.endsWith('.object')) {
                     try {
                         const xmlStr = decodeURIComponent(escape(atob(f.content)));
-                        return { 
-                            ...f, 
-                            content: btoa(unescape(encodeURIComponent(this.cleanObjectXml(xmlStr)))) 
+                        return {
+                            ...f,
+                            content: btoa(unescape(encodeURIComponent(this.cleanObjectXml(xmlStr))))
                         };
                     } catch (e) { return f; }
                 }
@@ -520,8 +594,8 @@ export default class DeploymentTool extends LightningElement {
 
             // ── Step 2: Push to GitHub ────────────────────────────────
             this.updateProgress('Step 2/5 — Pushing to GitHub (version history)...', 35);
-            const branchName    = await this.setupGitBranch();
-            const packageXml    = this.buildOrderedPackageXml();
+            const branchName     = await this.setupGitBranch();
+            const packageXml     = this.buildOrderedPackageXml();
             const allFilesToPush = [
                 { path: 'package.xml', content: btoa(unescape(encodeURIComponent(packageXml))) },
                 ...allFiles.filter(f => f.path !== 'package.xml')
@@ -537,10 +611,10 @@ export default class DeploymentTool extends LightningElement {
                 .map(c => `• ${c.metadataType.padEnd(30)} → ${c.name}`)
                 .join('\n');
 
-            const now         = new Date();
-            const deployDate  = `${now.getDate()} ${now.toLocaleString('en', { month: 'short' })} ${now.getFullYear()}`;
+            const now        = new Date();
+            const deployDate = `${now.getDate()} ${now.toLocaleString('en', { month: 'short' })} ${now.getFullYear()}`;
 
-            const prBody = 
+            const prBody =
 `🚀 Deployment Summary
 ─────────────────────────────────────
 📤 Source Org  : ${this.sourceOrgName}
@@ -554,10 +628,10 @@ ${componentLines}
 🔗 Branch: ${branchName}`;
 
             const prNumber = await createPullRequest({
-                branchName : branchName,      
-                title      : title,            
-                prBody     : prBody,           
-                userStoryId: this.userStoryId  
+                branchName : branchName,
+                title      : title,
+                prBody     : prBody,
+                userStoryId: this.userStoryId
             });
             await mergePullRequest({ prNumber, userStoryId: this.userStoryId });
 
@@ -576,39 +650,38 @@ ${componentLines}
 
             // ── Save Deployment Log ───────────────────────────────────
             const componentData = this.selectedComponents.map(c => {
-                const matched  = allFiles.find(f => 
-                    f.path.toLowerCase().includes(c.name.toLowerCase()) && 
+                const matched  = allFiles.find(f =>
+                    f.path.toLowerCase().includes(c.name.toLowerCase()) &&
                     !f.path.endsWith('-meta.xml')
                 );
-                const fallback = allFiles.find(f => 
+                const fallback = allFiles.find(f =>
                     f.path.toLowerCase().includes(c.name.toLowerCase())
                 );
-                return { 
-                    name         : c.name, 
-                    metadataType : c.metadataType, 
-                    filePath     : matched ? matched.path : (fallback ? fallback.path : ''), 
-                    operation    : 'Deploy' 
+                return {
+                    name        : c.name,
+                    metadataType: c.metadataType,
+                    filePath    : matched ? matched.path : (fallback ? fallback.path : ''),
+                    operation   : 'Deploy'
                 };
             });
 
-            // ✅ FIXED — userStoryId pass kiya
-            await saveDeploymentLog({ 
-                prNumber, 
-                prTitle      : title, 
-                branchName, 
-                deployStatus : deployResult.success ? 'Deployed' : 'Failed',
-                components   : componentData,
-                userStoryId  : this.userStoryId
+            await saveDeploymentLog({
+                prNumber,
+                prTitle     : title,
+                branchName,
+                deployStatus: deployResult.success ? 'Deployed' : 'Failed',
+                components  : componentData,
+                userStoryId : this.userStoryId
             });
 
             // ── Final Status ──────────────────────────────────────────
             if (deployResult.success) {
                 this.updateProgress(
-                    `✅ Done! ${this.selectedComponents.length} components deployed to ${this.targetOrgName}`, 
+                    `✅ Done! ${this.selectedComponents.length} components deployed to ${this.targetOrgName}`,
                     100
                 );
                 this.setStatus(
-                    `✅ Successfully deployed ${this.selectedComponents.length} components to ${this.targetOrgName}!`, 
+                    `✅ Successfully deployed ${this.selectedComponents.length} components to ${this.targetOrgName}!`,
                     true
                 );
             } else {
@@ -616,13 +689,15 @@ ${componentLines}
                 this.showProgress = false;
             }
 
-            if (this.showPrevCommitPanel) { 
-                this.prevCommits = []; 
-                await this.loadPreviousCommits(); 
+            // ── Refresh previous commits panel if open ────────────────
+            if (this.showPrevCommitPanel) {
+                this.prevCommits     = [];
+                this.prevCommitError = '';
+                await this.loadPreviousCommits();
             }
 
         } catch (e) {
-            this.setStatus('Error: ' + this.getError(e), false); 
+            this.setStatus('Error: ' + this.getError(e), false);
             this.showProgress = false;
         } finally {
             this.isLoading = false;
@@ -642,9 +717,9 @@ ${componentLines}
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
             zip.file(f.path, bytes);
         }
-        const zipBase64 = await zip.generateAsync({ 
-            type        : 'base64', 
-            compression : 'DEFLATE' 
+        const zipBase64 = await zip.generateAsync({
+            type        : 'base64',
+            compression : 'DEFLATE'
         });
         return zipBase64;
     }
@@ -664,25 +739,25 @@ ${componentLines}
 
             const deployed = result.numberComponentsDeployed || 0;
             const total    = result.numberComponentsTotal    || 0;
-            const pct      = total > 0 
-                ? Math.min(78 + Math.round((deployed / total) * 21), 99) 
+            const pct      = total > 0
+                ? Math.min(78 + Math.round((deployed / total) * 21), 99)
                 : 78 + Math.min(i, 20);
 
             this.updateProgress(
-                `Deploying to ${this.targetOrgName}... ${deployed}/${total} components (${result.status})`, 
+                `Deploying to ${this.targetOrgName}... ${deployed}/${total} components (${result.status})`,
                 pct
             );
 
             if (result.done) {
                 return {
-                    success      : result.status === 'Succeeded',
-                    errorMessage : result.errorMessage || ''
+                    success     : result.status === 'Succeeded',
+                    errorMessage: result.errorMessage || ''
                 };
             }
         }
-        return { 
-            success      : false, 
-            errorMessage : `Deploy timed out after ${Math.round((DEPLOY_MAX_ATTEMPTS * DEPLOY_POLL_INTERVAL) / 60000)} minutes.` 
+        return {
+            success     : false,
+            errorMessage: `Deploy timed out after ${Math.round((DEPLOY_MAX_ATTEMPTS * DEPLOY_POLL_INTERVAL) / 60000)} minutes.`
         };
     }
 
@@ -690,23 +765,25 @@ ${componentLines}
     // BUILD ORDERED PACKAGE XML
     // ══════════════════════════════════════════════════════════
     buildOrderedPackageXml() {
-        const DEPLOY_ORDER = { 
-            'CustomObject': 1, 'CustomField': 2, 'ValidationRule': 3, 
-            'GlobalValueSet': 4, 'CustomLabel': 5, 'StaticResource': 6, 
-            'ApexClass': 7, 'ApexTrigger': 8, 'ApexPage': 9, 
-            'LightningComponentBundle': 10, 'AuraDefinitionBundle': 11, 
-            'FlowDefinition': 12, 'PermissionSet': 13, 
-            'EmailTemplate': 14, 'FlexiPage': 15 
+        const DEPLOY_ORDER = {
+            'CustomObject'           : 1,  'CustomField'             : 2,
+            'ValidationRule'         : 3,  'GlobalValueSet'          : 4,
+            'CustomLabel'            : 5,  'StaticResource'          : 6,
+            'ApexClass'              : 7,  'ApexTrigger'             : 8,
+            'ApexPage'               : 9,  'LightningComponentBundle': 10,
+            'AuraDefinitionBundle'   : 11, 'FlowDefinition'          : 12,
+            'PermissionSet'          : 13, 'EmailTemplate'           : 14,
+            'FlexiPage'              : 15
         };
         const byType = {};
         for (const comp of this.selectedComponents) {
             const type = comp.metadataType, name = comp.name;
-            if ((type === 'CustomObject' || type === 'CustomMetadataType') && 
+            if ((type === 'CustomObject' || type === 'CustomMetadataType') &&
                 !name.endsWith('__c') && !name.endsWith('__mdt')) continue;
             if (!byType[type]) byType[type] = [];
             if (!byType[type].includes(name)) byType[type].push(name);
         }
-        const sortedTypes = Object.keys(byType).sort((a, b) => 
+        const sortedTypes = Object.keys(byType).sort((a, b) =>
             (DEPLOY_ORDER[a] || 99) - (DEPLOY_ORDER[b] || 99)
         );
         let typesXml = '';
@@ -733,7 +810,7 @@ ${componentLines}
         const allFiles     = new Map();
         let   totalDone    = 0;
         let   succeeded    = 0;
-        const totalBatches = types.reduce((sum, t) => 
+        const totalBatches = types.reduce((sum, t) =>
             sum + Math.ceil(byType[t].length / RETRIEVE_BATCH_SIZE), 0
         );
 
@@ -742,7 +819,7 @@ ${componentLines}
             for (let i = 0; i < batches.length; i++) {
                 totalDone++;
                 this.updateProgress(
-                    `Retrieving ${metadataType} — batch ${i + 1}/${batches.length}...`, 
+                    `Retrieving ${metadataType} — batch ${i + 1}/${batches.length}...`,
                     5 + Math.round((totalDone / totalBatches) * 25)
                 );
                 try {
@@ -788,25 +865,25 @@ ${componentLines}
         const binary = atob(base64Zip);
         const bytes  = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const zip   = await JSZip.loadAsync(bytes);
-        const files = [];
+        const zip          = await JSZip.loadAsync(bytes);
+        const files        = [];
         const SKIP_FOLDERS = ['layouts', 'profiles'];
 
         for (const [filename, fileObj] of Object.entries(zip.files)) {
             if (!fileObj.dir) {
                 let cleanPath = filename.replace(/^unpackaged\//, '');
                 if (cleanPath.endsWith('.flexipage')) cleanPath = cleanPath + '-meta.xml';
-                const shouldSkip = SKIP_FOLDERS.some(folder => 
+                const shouldSkip = SKIP_FOLDERS.some(folder =>
                     cleanPath.includes(`/${folder}/`) || cleanPath.startsWith(`${folder}/`)
                 );
                 if (shouldSkip) continue;
                 if (cleanPath.endsWith('.object')) {
                     let xmlStr = await fileObj.async('string');
                     if (cleanPath.endsWith('__mdt.object') && !xmlStr.includes('<label>')) {
-                        const rawName     = cleanPath.split('/').pop().replace('__mdt.object', '');
-                        const labelName   = rawName.replace(/_/g, ' ');
-                        const fieldsRegex = /<fields>[\s\S]*?<\/fields>/g;
-                        const fieldsMatch = xmlStr.match(fieldsRegex);
+                        const rawName       = cleanPath.split('/').pop().replace('__mdt.object', '');
+                        const labelName     = rawName.replace(/_/g, ' ');
+                        const fieldsRegex   = /<fields>[\s\S]*?<\/fields>/g;
+                        const fieldsMatch   = xmlStr.match(fieldsRegex);
                         const fieldsContent = fieldsMatch ? fieldsMatch.join('\n') : '';
                         xmlStr = `<?xml version="1.0" encoding="UTF-8"?>\n<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">\n    <label>${labelName}</label>\n    <pluralLabel>${labelName}s</pluralLabel>\n    <visibility>Public</visibility>\n    ${fieldsContent}\n</CustomObject>`;
                     } else if (this.cleanObjectXml) {
@@ -843,9 +920,9 @@ ${componentLines}
         const commitMsg   = `Deploy: ${uniqueTypes} — ${this.selectedComponents.length} components`;
         this.updateProgress(`Pushing all ${files.length} files to GitHub...`, 50);
         try {
-            await pushMultipleFilesToGitHub({ 
-                branchName, 
-                commitMessage : commitMsg, 
+            await pushMultipleFilesToGitHub({
+                branchName,
+                commitMessage : commitMsg,
                 files         : files.map(f => ({ filePath: f.path, base64Content: f.content })),
                 userStoryId   : this.userStoryId
             });
@@ -859,14 +936,15 @@ ${componentLines}
     // ══════════════════════════════════════════════════════════
     _truncate(str)        { if (!str) return ''; return str.length > NAME_DISPLAY_MAX ? str.substring(0, NAME_DISPLAY_MAX) + '...' : str; }
     chunkArray(arr, size) { const chunks = []; for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size)); return chunks; }
-    updateProgress(label, value) { 
-        this.progressLabel = label; this.progressValue = value; 
-        this.statusMessage = label; 
-        this.statusClass   = value === 100 ? 'slds-text-color_success' : 'slds-text-color_default'; 
+    updateProgress(label, value) {
+        this.progressLabel = label;
+        this.progressValue = value;
+        this.statusMessage = label;
+        this.statusClass   = value === 100 ? 'slds-text-color_success' : 'slds-text-color_default';
     }
-    setStatus(msg, isSuccess) { 
-        this.statusMessage = msg; 
-        this.statusClass   = isSuccess ? 'slds-text-color_success' : 'slds-text-color_error'; 
+    setStatus(msg, isSuccess) {
+        this.statusMessage = msg;
+        this.statusClass   = isSuccess ? 'slds-text-color_success' : 'slds-text-color_error';
     }
     getError(e) { return e?.body?.message || e?.message || JSON.stringify(e); }
     sleep(ms)   { return new Promise(resolve => setTimeout(resolve, ms)); }
