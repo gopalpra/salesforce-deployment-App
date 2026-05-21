@@ -259,85 +259,85 @@ public without sharing class DeploymentToolCtrl {
     // ═══════════════════════════════════════════════════════════
     // Refresh Access Token
     // ═══════════════════════════════════════════════════════════
-   @AuraEnabled
-public static Map<String, String> refreshAccessToken(String refreshToken, String orgType, String orgName) {
-    try {
-      List<OAuth_Config__mdt> configs = [
-    SELECT Client_Id__c, Client_Secret__c, Callback_Url__c
-    FROM OAuth_Config__mdt
-    WHERE App_Type__c = 'Salesforce'
-    AND DeveloperName = :orgName.capitalize()
-    LIMIT 1
-];
+    @AuraEnabled
+    public static Map<String, String> refreshAccessToken(String refreshToken, String orgType, String orgName) {
+        try {
+            List<OAuth_Config__mdt> configs = [
+                SELECT Client_Id__c, Client_Secret__c, Callback_Url__c
+                FROM OAuth_Config__mdt
+                WHERE App_Type__c = 'Salesforce'
+                AND DeveloperName = :orgName.capitalize()
+                LIMIT 1
+            ];
 
-if(configs.isEmpty()) {
-    configs = [
-        SELECT Client_Id__c, Client_Secret__c, Callback_Url__c
-        FROM OAuth_Config__mdt
-        WHERE DeveloperName = 'Default'
-        LIMIT 1
-    ];
-}
-
-OAuth_Config__mdt config = configs[0];
-        Boolean isSandbox     = (orgType != null && orgType.toLowerCase() == 'sandbox');
-        String  orgTypeLabel  = isSandbox ? 'Sandbox' : 'Production';
-        String  tokenEndpoint = isSandbox
-            ? 'https://test.salesforce.com/services/oauth2/token'
-            : 'https://login.salesforce.com/services/oauth2/token';
-
-        HttpRequest req = new HttpRequest();
-        req.setEndpoint(tokenEndpoint);
-        req.setMethod('POST');
-        req.setHeader('Content-Type', 'application/x-www-form-urlencoded');
-        req.setBody(
-            'grant_type=refresh_token'
-            + '&client_id='     + EncodingUtil.urlEncode(config.Client_Id__c,     'UTF-8')
-            + '&client_secret=' + EncodingUtil.urlEncode(config.Client_Secret__c, 'UTF-8')
-            + '&refresh_token=' + EncodingUtil.urlEncode(refreshToken,            'UTF-8')
-        );
-        req.setTimeout(TIMEOUT_MS);
-
-        HttpResponse res      = new Http().send(req);
-        String       respBody = res.getBody();
-
-        if (res.getStatusCode() != 200) {
-            String friendlyMsg;
-            if (respBody.contains('invalid_grant') || respBody.contains('expired')) {
-                friendlyMsg = '⚠️ ' + orgTypeLabel + ' org refresh token has either expired or been revoked.\n'
-                    + 'Please go to the Environments app and click the "Connect Org" button for this org to reconnect it.\n'
-                    + 'This will generate a fresh token.';
-            } else if (respBody.contains('invalid_client')) {
-                friendlyMsg = '⚠️ Connected App credentials are incorrect (' + orgTypeLabel + ').\n'
-                    + 'Please check the Client_Id and Client_Secret in OAuth_Config__mdt.';
-            } else if (respBody.contains('inactive_user') || respBody.contains('inactive_org')) {
-                friendlyMsg = '⚠️ ' + orgTypeLabel + ' org or user is inactive.\n'
-                    + 'Please contact the Salesforce admin and check the org/user status.';
-            } else {
-                friendlyMsg = 'Token refresh failed (' + res.getStatusCode() + ') for ' + orgTypeLabel + ' org: ' + respBody;
+            if (configs.isEmpty()) {
+                configs = [
+                    SELECT Client_Id__c, Client_Secret__c, Callback_Url__c
+                    FROM OAuth_Config__mdt
+                    WHERE DeveloperName = 'Default'
+                    LIMIT 1
+                ];
             }
-            throw createAuraException(friendlyMsg);
+
+            OAuth_Config__mdt config = configs[0];
+            Boolean isSandbox     = (orgType != null && orgType.toLowerCase() == 'sandbox');
+            String  orgTypeLabel  = isSandbox ? 'Sandbox' : 'Production';
+            String  tokenEndpoint = isSandbox
+                ? 'https://test.salesforce.com/services/oauth2/token'
+                : 'https://login.salesforce.com/services/oauth2/token';
+
+            HttpRequest req = new HttpRequest();
+            req.setEndpoint(tokenEndpoint);
+            req.setMethod('POST');
+            req.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+            req.setBody(
+                'grant_type=refresh_token'
+                + '&client_id='     + EncodingUtil.urlEncode(config.Client_Id__c,     'UTF-8')
+                + '&client_secret=' + EncodingUtil.urlEncode(config.Client_Secret__c, 'UTF-8')
+                + '&refresh_token=' + EncodingUtil.urlEncode(refreshToken,            'UTF-8')
+            );
+            req.setTimeout(TIMEOUT_MS);
+
+            HttpResponse res      = new Http().send(req);
+            String       respBody = res.getBody();
+
+            if (res.getStatusCode() != 200) {
+                String friendlyMsg;
+                if (respBody.contains('invalid_grant') || respBody.contains('expired')) {
+                    friendlyMsg = '⚠️ ' + orgTypeLabel + ' org refresh token has either expired or been revoked.\n'
+                        + 'Please go to the Environments app and click the "Connect Org" button for this org to reconnect it.\n'
+                        + 'This will generate a fresh token.';
+                } else if (respBody.contains('invalid_client')) {
+                    friendlyMsg = '⚠️ Connected App credentials are incorrect (' + orgTypeLabel + ').\n'
+                        + 'Please check the Client_Id and Client_Secret in OAuth_Config__mdt.';
+                } else if (respBody.contains('inactive_user') || respBody.contains('inactive_org')) {
+                    friendlyMsg = '⚠️ ' + orgTypeLabel + ' org or user is inactive.\n'
+                        + 'Please contact the Salesforce admin and check the org/user status.';
+                } else {
+                    friendlyMsg = 'Token refresh failed (' + res.getStatusCode() + ') for ' + orgTypeLabel + ' org: ' + respBody;
+                }
+                throw createAuraException(friendlyMsg);
+            }
+
+            Map<String, Object> parsed      = (Map<String, Object>) JSON.deserializeUntyped(respBody);
+            String              accessToken = String.valueOf(parsed.get('access_token'));
+            String              instanceUrl = String.valueOf(parsed.get('instance_url'));
+
+            if (String.isBlank(accessToken) || accessToken == 'null')
+                throw createAuraException('⚠️ ' + orgTypeLabel + ' org access token is blank.\nPlease go to the Environments app and connect the org again.');
+            if (String.isBlank(instanceUrl) || instanceUrl == 'null')
+                throw createAuraException('⚠️ ' + orgTypeLabel + ' org instance URL is blank.\nGo to the Environments app and reconnect the org again.');
+
+            return new Map<String, String>{
+                'accessToken' => accessToken,
+                'instanceUrl' => instanceUrl
+            };
+        } catch (AuraHandledException e) {
+            throw e;
+        } catch (Exception e) {
+            throw createAuraException('refreshAccessToken: ' + e.getMessage());
         }
-
-        Map<String, Object> parsed      = (Map<String, Object>) JSON.deserializeUntyped(respBody);
-        String              accessToken = String.valueOf(parsed.get('access_token'));
-        String              instanceUrl = String.valueOf(parsed.get('instance_url'));
-
-        if (String.isBlank(accessToken) || accessToken == 'null')
-            throw createAuraException('⚠️ ' + orgTypeLabel + ' org access token is blank.\nPlease go to the Environments app and connect the org again.');
-        if (String.isBlank(instanceUrl) || instanceUrl == 'null')
-            throw createAuraException('⚠️ ' + orgTypeLabel + ' org instance URL is blank.\nGo to the Environments app and reconnect the org again.');
-
-        return new Map<String, String>{
-            'accessToken' => accessToken,
-            'instanceUrl' => instanceUrl
-        };
-    } catch (AuraHandledException e) {
-        throw e;
-    } catch (Exception e) {
-        throw createAuraException('refreshAccessToken: ' + e.getMessage());
     }
-}
 
     // ═══════════════════════════════════════════════════════════
     // Fetch components from dynamic org
@@ -642,10 +642,11 @@ OAuth_Config__mdt config = configs[0];
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GitHub: Push Multiple Files (dynamic default branch)
+    // GitHub: Push Multiple Files
+    // ✅ CHANGED: Boolean → String (commit SHA return )
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-    public static Boolean pushMultipleFilesToGitHub(String branchName, String commitMessage, List<Map<String, String>> files, String userStoryId) {
+    public static String pushMultipleFilesToGitHub(String branchName, String commitMessage, List<Map<String, String>> files, String userStoryId) {
         try {
             GitHub_Connection__c conn  = getConnectionFromUserStory(userStoryId);
             String               owner = conn.Repo_Owner__c;
@@ -698,11 +699,95 @@ OAuth_Config__mdt config = configs[0];
                 repoPath(owner, repo, '/git/refs/heads/' + branchName),
                 new Map<String, Object>{ 'sha' => newCommitSha });
             checkGitHubRateLimit(updateRefRes, 'Update Ref');
-            return true;
+
+            
+            return newCommitSha;
+
         } catch (AuraHandledException e) {
             throw e;
         } catch (Exception e) {
             throw createAuraException('pushMultipleFilesToGitHub: ' + e.getMessage());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ✅ NEW METHOD — Save Commit + Component Records
+// Save the commit SHA received from GitHub into Commit__c
+// Create separate Component__c entries for each component
+// Duplicate check: if the same component already exists, it will be updated instead of creating a new record
+    // ═══════════════════════════════════════════════════════════
+    @AuraEnabled
+    public static String saveCommitAndComponentRecords(
+            String commitSha,
+            String commitMessage,
+            String userStoryId,
+            List<Map<String, String>> components) {
+        try {
+            if (String.isBlank(commitSha))    throw createAuraException('Commit SHA blank hai.');
+            if (String.isBlank(userStoryId))  throw createAuraException('User Story ID blank hai.');
+            if (components == null || components.isEmpty()) throw createAuraException('Components list empty hai.');
+
+            // ── Step 1: Create a Commit__c record ────────────
+            Commit__c commitRec = new Commit__c(
+                Commit_ID__c      = commitSha,
+                Commit_Message__c = commitMessage,
+                User_Story_Name__c   = userStoryId
+            );
+            insert commitRec;
+
+            // ── Step 2: Fetch existing Component__c records (duplicate check)──
+            List<String> componentNames = new List<String>();
+            for (Map<String, String> comp : components) {
+                componentNames.add(comp.get('name'));
+            }
+
+            List<Component__c> existingComponents = [
+                SELECT Id, Component_Name__c, Commit_ID__c, Metadata_Type__c
+                FROM Component__c
+                WHERE User_Story_Name__c= :userStoryId
+                AND Component_Name__c IN :componentNames
+            ];
+
+            // Create Map: componentName → existing record
+            Map<String, Component__c> existingMap = new Map<String, Component__c>();
+            for (Component__c ec : existingComponents) {
+                existingMap.put(ec.Component_Name__c, ec);
+            }
+
+            // ── Step 3: Decide whether to insert or update the records. ───────
+            List<Component__c> toInsert = new List<Component__c>();
+            List<Component__c> toUpdate = new List<Component__c>();
+
+            for (Map<String, String> comp : components) {
+                String compName     = comp.get('name');
+                String compType     = comp.containsKey('metadataType') ? comp.get('metadataType') : '';
+
+                if (existingMap.containsKey(compName)) {
+                    // ✅ If it already exists, only update the latest Commit_ID
+                    Component__c existing = existingMap.get(compName);
+                    existing.Commit_ID__c    = commitSha;
+                    existing.Metadata_Type__c = compType;
+                    toUpdate.add(existing);
+                } else {
+                    // ✅If it’s a new component, insert it
+                    toInsert.add(new Component__c(
+                        Component_Name__c = compName,
+                        Commit_ID__c      = commitSha,
+                        Metadata_Type__c  = compType,
+                        User_Story_Name__c    = userStoryId
+                    ));
+                }
+            }
+
+            if (!toInsert.isEmpty()) insert toInsert;
+            if (!toUpdate.isEmpty()) update toUpdate;
+
+            return commitRec.Id;
+
+        } catch (AuraHandledException e) {
+            throw e;
+        } catch (Exception e) {
+            throw createAuraException('saveCommitAndComponentRecords: ' + e.getMessage());
         }
     }
 
@@ -792,7 +877,7 @@ OAuth_Config__mdt config = configs[0];
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ FIXED — GitHub: Get Previous Commits (userStoryId dynamic)
+    // GitHub: Get Previous Commits
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static List<Map<String, Object>> getPreviousCommits(String userStoryId) {
@@ -847,7 +932,7 @@ OAuth_Config__mdt config = configs[0];
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ FIXED — Save Deployment Log (userStoryId dynamic)
+    // Save Deployment Log
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String saveDeploymentLog(
@@ -890,7 +975,7 @@ OAuth_Config__mdt config = configs[0];
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ FIXED — Sync Deployment Status (userStoryId dynamic)
+    // Sync Deployment Status
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String syncDeploymentStatus(String logId, String branchName, String userStoryId) {
@@ -926,8 +1011,10 @@ OAuth_Config__mdt config = configs[0];
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Deploy to Target Org
+    // ⛔ TEMPORARILY DISABLED — Deploy to Target Org
+    
     // ═══════════════════════════════════════════════════════════
+    /*
     @AuraEnabled
     public static String startDeployToTargetOrg(String zipBase64, String accessToken, String instanceUrl) {
         try {
@@ -972,10 +1059,13 @@ OAuth_Config__mdt config = configs[0];
             throw createAuraException('startDeployToTargetOrg: ' + e.getMessage());
         }
     }
+    */
 
     // ═══════════════════════════════════════════════════════════
-    // Check Deploy Status
+    // ⛔ TEMPORARILY DISABLED — Check Deploy Status
+    
     // ═══════════════════════════════════════════════════════════
+    /*
     @AuraEnabled
     public static Map<String, Object> checkDeployStatus(String jobId, String accessToken, String instanceUrl) {
         try {
@@ -1040,6 +1130,7 @@ OAuth_Config__mdt config = configs[0];
             throw createAuraException('checkDeployStatus: ' + e.getMessage());
         }
     }
+    */
 
     // ═══════════════════════════════════════════════════════════
     // UTILITY METHODS

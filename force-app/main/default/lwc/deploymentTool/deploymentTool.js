@@ -4,21 +4,25 @@ import { loadScript }              from 'lightning/platformResourceLoader';
 import { wire }                    from 'lwc';
 import JSZIP                       from '@salesforce/resourceUrl/JSZip';
 
-import getComponentsDynamic       from '@salesforce/apex/DeploymentToolCtrl.getComponentsDynamic';
-import getComponentDependencies   from '@salesforce/apex/DeploymentToolCtrl.getComponentDependencies';
-import startRetrieveDynamic       from '@salesforce/apex/DeploymentToolCtrl.startRetrieveDynamic';
-import checkRetrieveStatusDynamic from '@salesforce/apex/DeploymentToolCtrl.checkRetrieveStatusDynamic';
-import getMainBranchSha           from '@salesforce/apex/DeploymentToolCtrl.getMainBranchSha';
-import createFeatureBranch        from '@salesforce/apex/DeploymentToolCtrl.createFeatureBranch';
-import pushMultipleFilesToGitHub  from '@salesforce/apex/DeploymentToolCtrl.pushMultipleFilesToGitHub';
-import createPullRequest          from '@salesforce/apex/DeploymentToolCtrl.createPullRequest';
-import mergePullRequest           from '@salesforce/apex/DeploymentToolCtrl.mergePullRequest';
-import getPreviousCommits         from '@salesforce/apex/DeploymentToolCtrl.getPreviousCommits';
-import saveDeploymentLog          from '@salesforce/apex/DeploymentToolCtrl.saveDeploymentLog';
-import getOrgDetailsFromUserStory from '@salesforce/apex/DeploymentToolCtrl.getOrgDetailsFromUserStory';
-import refreshAccessToken         from '@salesforce/apex/DeploymentToolCtrl.refreshAccessToken';
-import startDeployToTargetOrg     from '@salesforce/apex/DeploymentToolCtrl.startDeployToTargetOrg';
-import checkDeployStatus          from '@salesforce/apex/DeploymentToolCtrl.checkDeployStatus';
+import getComponentsDynamic           from '@salesforce/apex/DeploymentToolCtrl.getComponentsDynamic';
+import getComponentDependencies       from '@salesforce/apex/DeploymentToolCtrl.getComponentDependencies';
+import startRetrieveDynamic           from '@salesforce/apex/DeploymentToolCtrl.startRetrieveDynamic';
+import checkRetrieveStatusDynamic     from '@salesforce/apex/DeploymentToolCtrl.checkRetrieveStatusDynamic';
+import getMainBranchSha               from '@salesforce/apex/DeploymentToolCtrl.getMainBranchSha';
+import createFeatureBranch            from '@salesforce/apex/DeploymentToolCtrl.createFeatureBranch';
+import pushMultipleFilesToGitHub      from '@salesforce/apex/DeploymentToolCtrl.pushMultipleFilesToGitHub';
+import createPullRequest              from '@salesforce/apex/DeploymentToolCtrl.createPullRequest';
+import mergePullRequest               from '@salesforce/apex/DeploymentToolCtrl.mergePullRequest';
+import getPreviousCommits             from '@salesforce/apex/DeploymentToolCtrl.getPreviousCommits';
+import saveDeploymentLog              from '@salesforce/apex/DeploymentToolCtrl.saveDeploymentLog';
+import getOrgDetailsFromUserStory     from '@salesforce/apex/DeploymentToolCtrl.getOrgDetailsFromUserStory';
+import refreshAccessToken             from '@salesforce/apex/DeploymentToolCtrl.refreshAccessToken';
+// ⛔ TEMPORARILY DISABLED — 
+// import startDeployToTargetOrg     from '@salesforce/apex/DeploymentToolCtrl.startDeployToTargetOrg';
+// import checkDeployStatus          from '@salesforce/apex/DeploymentToolCtrl.checkDeployStatus';
+
+
+import saveCommitAndComponentRecords  from '@salesforce/apex/DeploymentToolCtrl.saveCommitAndComponentRecords';
 
 const RETRIEVE_BATCH_SIZE  = 10;
 const MAX_POLL_ATTEMPTS    = 80;
@@ -92,97 +96,86 @@ export default class DeploymentTool extends LightningElement {
         const storyId = pageRef?.state?.c__userStoryId;
         if (storyId && storyId !== this.userStoryId) {
             this.userStoryId = storyId;
-            this._resetAllState();              // ← poora state reset pehle
-            await this.loadOrgsFromUserStory(); // ← phir fresh load
+            this._resetAllState();
+            await this.loadOrgsFromUserStory();
         }
     }
 
     // ══════════════════════════════════════════════════════════
-    // FULL STATE RESET — naya User Story aane par sab saaf
+    // FULL STATE RESET
     // ══════════════════════════════════════════════════════════
     _resetAllState() {
-        // ── Components & selection ───────────────────────────
         this.selectedComponents = [];
         this.components         = [];
         this.hasComponents      = false;
         this.selectedType       = '';
-
-        // ── Status / progress ────────────────────────────────
-        this.statusMessage = '';
-        this.statusClass   = 'slds-text-color_success';
-        this.showProgress  = false;
-        this.progressValue = 0;
-        this.progressLabel = '';
-        this.isLoading     = false;
-
-        // ── Filters ──────────────────────────────────────────
+        this.statusMessage      = '';
+        this.statusClass        = 'slds-text-color_success';
+        this.showProgress       = false;
+        this.progressValue      = 0;
+        this.progressLabel      = '';
+        this.isLoading          = false;
         this.filterName          = '';
         this.filterLabel         = '';
         this.filterCreatedBy     = '';
         this.filterModifiedBy    = '';
         this.filterModifiedAfter = '';
         this.filterCreatedAfter  = '';
-
-        // ── Previous commits panel ───────────────────────────
         this.prevCommits         = [];
         this.prevCommitError     = '';
         this.showPrevCommitPanel = false;
         this.isPrevCommitLoading = false;
-
-        // ── Tab ──────────────────────────────────────────────
-        this.activeTab = 'findChanges';
-
-        // ── Org state (will be reloaded fresh) ───────────────
-        this.orgsReady         = false;
-        this.orgLoadError      = '';
-        this.sourceOrgName     = '';
-        this.targetOrgName     = '';
-        this.sourceAccessToken = null;
-        this.sourceInstanceUrl = null;
-        this.targetAccessToken = null;
-        this.targetInstanceUrl = null;
+        this.activeTab           = 'findChanges';
+        this.orgsReady           = false;
+        this.orgLoadError        = '';
+        this.sourceOrgName       = '';
+        this.targetOrgName       = '';
+        this.sourceAccessToken   = null;
+        this.sourceInstanceUrl   = null;
+        this.targetAccessToken   = null;
+        this.targetInstanceUrl   = null;
     }
 
     // ══════════════════════════════════════════════════════════
     // Load orgs from User Story → refresh tokens
     // ══════════════════════════════════════════════════════════
     async loadOrgsFromUserStory() {
-    this.isOrgLoading = true;
-    this.orgLoadError = '';
-    this.orgsReady    = false;
-    try {
-        const orgDetails = await getOrgDetailsFromUserStory({
-            userStoryId: this.userStoryId
-        });
-
-        this.sourceOrgName = orgDetails.sourceOrgName || 'Source Org';
-        this.targetOrgName = orgDetails.targetOrgName || 'Target Org';
-
-        const sourceToken = await refreshAccessToken({
-            refreshToken : orgDetails.sourceRefreshToken,
-            orgType      : orgDetails.sourceOrgType,
-            orgName      : orgDetails.sourceOrgName   // ← SIRF YEH ADD HUA
-        });
-        this.sourceAccessToken = sourceToken.accessToken;
-        this.sourceInstanceUrl = sourceToken.instanceUrl;
-
-        const targetToken = await refreshAccessToken({
-            refreshToken : orgDetails.targetRefreshToken,
-            orgType      : orgDetails.targetOrgType,
-            orgName      : orgDetails.targetOrgName   // ← SIRF YEH ADD HUA
-        });
-        this.targetAccessToken = targetToken.accessToken;
-        this.targetInstanceUrl = targetToken.instanceUrl;
-
-        this.orgsReady = true;
-
-    } catch(e) {
-        this.orgLoadError = this.getError(e);
+        this.isOrgLoading = true;
+        this.orgLoadError = '';
         this.orgsReady    = false;
-    } finally {
-        this.isOrgLoading = false;
+        try {
+            const orgDetails = await getOrgDetailsFromUserStory({
+                userStoryId: this.userStoryId
+            });
+
+            this.sourceOrgName = orgDetails.sourceOrgName || 'Source Org';
+            this.targetOrgName = orgDetails.targetOrgName || 'Target Org';
+
+            const sourceToken = await refreshAccessToken({
+                refreshToken : orgDetails.sourceRefreshToken,
+                orgType      : orgDetails.sourceOrgType,
+                orgName      : orgDetails.sourceOrgName
+            });
+            this.sourceAccessToken = sourceToken.accessToken;
+            this.sourceInstanceUrl = sourceToken.instanceUrl;
+
+            const targetToken = await refreshAccessToken({
+                refreshToken : orgDetails.targetRefreshToken,
+                orgType      : orgDetails.targetOrgType,
+                orgName      : orgDetails.targetOrgName
+            });
+            this.targetAccessToken = targetToken.accessToken;
+            this.targetInstanceUrl = targetToken.instanceUrl;
+
+            this.orgsReady = true;
+
+        } catch(e) {
+            this.orgLoadError = this.getError(e);
+            this.orgsReady    = false;
+        } finally {
+            this.isOrgLoading = false;
+        }
     }
-}
 
     // ══════════════════════════════════════════════════════════
     // ORG BANNER GETTERS
@@ -284,7 +277,6 @@ export default class DeploymentTool extends LightningElement {
     async togglePrevCommitPanel() {
         this.showPrevCommitPanel = !this.showPrevCommitPanel;
         if (this.showPrevCommitPanel) {
-            // Har baar fresh load karo — puraana data nahi dikhana
             this.prevCommits     = [];
             this.prevCommitError = '';
             await this.loadPreviousCommits();
@@ -538,7 +530,7 @@ export default class DeploymentTool extends LightningElement {
 
         try {
             // ── Step 0: Dependencies check ────────────────────────────
-            this.updateProgress('Step 0/5 — Checking Dependencies...', 2);
+            this.updateProgress('Step 0/3 — Checking Dependencies...', 2);
             const compIds = this.selectedComponents
                 .map(c => c.id)
                 .filter(id => id && !id.startsWith('dep_'));
@@ -582,7 +574,7 @@ export default class DeploymentTool extends LightningElement {
             }
 
             // ── Step 1: Retrieve from Source Org ─────────────────────
-            this.updateProgress('Step 1/5 — Retrieving from Source Org...', 5);
+            this.updateProgress('Step 1/3 — Retrieving from Source Org...', 5);
             const rawFiles = await this.batchedRetrieveByType();
             const allFiles = rawFiles.map(f => {
                 if (f.path.includes('/objects/') && f.path.endsWith('.object')) {
@@ -598,103 +590,48 @@ export default class DeploymentTool extends LightningElement {
             });
 
             // ── Step 2: Push to GitHub ────────────────────────────────
-            this.updateProgress('Step 2/5 — Pushing to GitHub (version history)...', 35);
+            this.updateProgress('Step 2/3 — Pushing to GitHub...', 35);
             const branchName     = await this.setupGitBranch();
             const packageXml     = this.buildOrderedPackageXml();
             const allFilesToPush = [
                 { path: 'package.xml', content: btoa(unescape(encodeURIComponent(packageXml))) },
                 ...allFiles.filter(f => f.path !== 'package.xml')
             ];
-            await this.pushAllFilesWithRetry(allFilesToPush, branchName);
 
-            // ── Step 3: PR Create + Merge ─────────────────────────────
-            this.updateProgress('Step 3/5 — Creating PR for history...', 65);
+        
+            const commitSha = await this.pushAllFilesWithRetry(allFilesToPush, branchName);
+
+           
+            this.updateProgress('Step 3/3 — Saving commit records in Salesforce...', 80);
+
+           
+            const componentData = this.selectedComponents.map(c => ({
+                name        : c.name,
+                metadataType: c.metadataType
+            }));
+
+        
             const uniqueTypes = [...new Set(this.selectedComponents.map(c => c.metadataType))].join(', ');
-            const title       = `Deploy: ${uniqueTypes} (${this.selectedComponents.length} components)`;
+            const commitMsg   = `Deploy: ${uniqueTypes} — ${this.selectedComponents.length} components`;
 
-            const componentLines = this.selectedComponents
-                .map(c => `• ${c.metadataType.padEnd(30)} → ${c.name}`)
-                .join('\n');
-
-            const now        = new Date();
-            const deployDate = `${now.getDate()} ${now.toLocaleString('en', { month: 'short' })} ${now.getFullYear()}`;
-
-            const prBody =
-`🚀 Deployment Summary
-─────────────────────────────────────
-📤 Source Org  : ${this.sourceOrgName}
-📥 Target Org  : ${this.targetOrgName}
-📦 Components  : ${this.selectedComponents.length}
-📅 Date        : ${deployDate}
-─────────────────────────────────────
-📋 Components Deployed:
-${componentLines}
-─────────────────────────────────────
-🔗 Branch: ${branchName}`;
-
-            const prNumber = await createPullRequest({
-                branchName : branchName,
-                title      : title,
-                prBody     : prBody,
-                userStoryId: this.userStoryId
-            });
-            await mergePullRequest({ prNumber, userStoryId: this.userStoryId });
-
-            // ── Step 4: Direct Deploy to Target Org ──────────────────
-            this.updateProgress('Step 4/5 — Deploying directly to Target Org...', 72);
-            const deployZip   = await this.buildDeployZip(allFiles, packageXml);
-            const deployJobId = await startDeployToTargetOrg({
-                zipBase64   : deployZip,
-                accessToken : this.targetAccessToken,
-                instanceUrl : this.targetInstanceUrl
-            });
-
-            // ── Step 5: Poll Deploy Status ────────────────────────────
-            this.updateProgress('Step 5/5 — Waiting for deploy to complete...', 78);
-            const deployResult = await this.pollDeployStatus(deployJobId);
-
-            // ── Save Deployment Log ───────────────────────────────────
-            const componentData = this.selectedComponents.map(c => {
-                const matched  = allFiles.find(f =>
-                    f.path.toLowerCase().includes(c.name.toLowerCase()) &&
-                    !f.path.endsWith('-meta.xml')
-                );
-                const fallback = allFiles.find(f =>
-                    f.path.toLowerCase().includes(c.name.toLowerCase())
-                );
-                return {
-                    name        : c.name,
-                    metadataType: c.metadataType,
-                    filePath    : matched ? matched.path : (fallback ? fallback.path : ''),
-                    operation   : 'Deploy'
-                };
-            });
-
-            await saveDeploymentLog({
-                prNumber,
-                prTitle     : title,
-                branchName,
-                deployStatus: deployResult.success ? 'Deployed' : 'Failed',
-                components  : componentData,
-                userStoryId : this.userStoryId
+            await saveCommitAndComponentRecords({
+                commitSha   : commitSha,
+                commitMessage: commitMsg,
+                userStoryId : this.userStoryId,
+                components  : componentData
             });
 
             // ── Final Status ──────────────────────────────────────────
-            if (deployResult.success) {
-                this.updateProgress(
-                    `✅ Done! ${this.selectedComponents.length} components deployed to ${this.targetOrgName}`,
-                    100
-                );
-                this.setStatus(
-                    `✅ Successfully deployed ${this.selectedComponents.length} components to ${this.targetOrgName}!`,
-                    true
-                );
-            } else {
-                this.setStatus(`❌ Deploy Failed: ${deployResult.errorMessage}`, false);
-                this.showProgress = false;
-            }
+            this.updateProgress(
+                `✅ Done! ${this.selectedComponents.length} components committed to GitHub`,
+                100
+            );
+            this.setStatus(
+                `✅ Successfully pushed ${this.selectedComponents.length} components to GitHub and saved records!`,
+                true
+            );
 
-            // ── Refresh previous commits panel if open ────────────────
+            
             if (this.showPrevCommitPanel) {
                 this.prevCommits     = [];
                 this.prevCommitError = '';
@@ -711,7 +648,9 @@ ${componentLines}
 
     // ══════════════════════════════════════════════════════════
     // BUILD DEPLOY ZIP
+    // ⛔ TEMPORARILY DISABLED — 
     // ══════════════════════════════════════════════════════════
+    /*
     async buildDeployZip(files, packageXml) {
         const zip = new JSZip();
         zip.file('package.xml', packageXml);
@@ -728,31 +667,30 @@ ${componentLines}
         });
         return zipBase64;
     }
+    */
 
     // ══════════════════════════════════════════════════════════
     // POLL DEPLOY STATUS
+    // ⛔ TEMPORARILY DISABLED — 
     // ══════════════════════════════════════════════════════════
+    /*
     async pollDeployStatus(jobId) {
         for (let i = 0; i < DEPLOY_MAX_ATTEMPTS; i++) {
             await this.sleep(DEPLOY_POLL_INTERVAL);
-
             const result = await checkDeployStatus({
                 jobId,
                 accessToken : this.targetAccessToken,
                 instanceUrl : this.targetInstanceUrl
             });
-
             const deployed = result.numberComponentsDeployed || 0;
             const total    = result.numberComponentsTotal    || 0;
             const pct      = total > 0
                 ? Math.min(78 + Math.round((deployed / total) * 21), 99)
                 : 78 + Math.min(i, 20);
-
             this.updateProgress(
                 `Deploying to ${this.targetOrgName}... ${deployed}/${total} components (${result.status})`,
                 pct
             );
-
             if (result.done) {
                 return {
                     success     : result.status === 'Succeeded',
@@ -765,6 +703,7 @@ ${componentLines}
             errorMessage: `Deploy timed out after ${Math.round((DEPLOY_MAX_ATTEMPTS * DEPLOY_POLL_INTERVAL) / 60000)} minutes.`
         };
     }
+    */
 
     // ══════════════════════════════════════════════════════════
     // BUILD ORDERED PACKAGE XML
@@ -783,7 +722,7 @@ ${componentLines}
         const byType = {};
         for (const comp of this.selectedComponents) {
             const type = comp.metadataType, name = comp.name;
-             if (SKIP_COMPONENTS.includes(name)) continue
+            if (SKIP_COMPONENTS.includes(name)) continue;
             if ((type === 'CustomObject' || type === 'CustomMetadataType') &&
                 !name.endsWith('__c') && !name.endsWith('__mdt')) continue;
             if (!byType[type]) byType[type] = [];
@@ -873,26 +812,25 @@ ${componentLines}
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         const zip          = await JSZip.loadAsync(bytes);
         const files        = [];
-       const SKIP_FOLDERS = ['layouts', 'profiles'];
-const SKIP_FILES = [
-    'OAuthCallbackCtrl.cls',
-    'OAuthCallbackCtrl.cls-meta.xml',
-    'OAuthCallback.page',
-    'OAuthCallback.page-meta.xml'
-];
+        const SKIP_FOLDERS = ['layouts', 'profiles'];
+        const SKIP_FILES   = [
+            'OAuthCallbackCtrl.cls',
+            'OAuthCallbackCtrl.cls-meta.xml',
+            'OAuthCallback.page',
+            'OAuthCallback.page-meta.xml'
+        ];
 
-for (const [filename, fileObj] of Object.entries(zip.files)) {
-    if (!fileObj.dir) {
-        let cleanPath = filename.replace(/^unpackaged\//, '');
-        if (cleanPath.endsWith('.flexipage')) cleanPath = cleanPath + '-meta.xml';
-        
-        // File name check
-        const fileName = cleanPath.split('/').pop();
-        if (SKIP_FILES.some(skip => fileName === skip)) continue;
-        
-        const shouldSkip = SKIP_FOLDERS.some(folder =>
-            cleanPath.includes(`/${folder}/`) || cleanPath.startsWith(`${folder}/`)
-        );
+        for (const [filename, fileObj] of Object.entries(zip.files)) {
+            if (!fileObj.dir) {
+                let cleanPath = filename.replace(/^unpackaged\//, '');
+                if (cleanPath.endsWith('.flexipage')) cleanPath = cleanPath + '-meta.xml';
+
+                const fileName = cleanPath.split('/').pop();
+                if (SKIP_FILES.some(skip => fileName === skip)) continue;
+
+                const shouldSkip = SKIP_FOLDERS.some(folder =>
+                    cleanPath.includes(`/${folder}/`) || cleanPath.startsWith(`${folder}/`)
+                );
                 if (shouldSkip) continue;
                 if (cleanPath.endsWith('.object')) {
                     let xmlStr = await fileObj.async('string');
@@ -931,18 +869,21 @@ for (const [filename, fileObj] of Object.entries(zip.files)) {
 
     // ══════════════════════════════════════════════════════════
     // PUSH FILES
+    // ✅ CHANGED: Now it returns the commit SHA.
     // ══════════════════════════════════════════════════════════
     async pushAllFilesWithRetry(files, branchName) {
         const uniqueTypes = [...new Set(this.selectedComponents.map(c => c.metadataType))].join(', ');
         const commitMsg   = `Deploy: ${uniqueTypes} — ${this.selectedComponents.length} components`;
         this.updateProgress(`Pushing all ${files.length} files to GitHub...`, 50);
         try {
-            await pushMultipleFilesToGitHub({
+            
+            const commitSha = await pushMultipleFilesToGitHub({
                 branchName,
                 commitMessage : commitMsg,
                 files         : files.map(f => ({ filePath: f.path, base64Content: f.content })),
                 userStoryId   : this.userStoryId
             });
+            return commitSha; 
         } catch (error) {
             throw new Error('Bulk push failed: ' + this.getError(error));
         }
