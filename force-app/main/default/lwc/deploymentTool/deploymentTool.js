@@ -26,7 +26,10 @@ const POLL_INTERVAL_MS     = 5000;
 const DEPLOY_POLL_INTERVAL = 5000;
 const DEPLOY_MAX_ATTEMPTS  = 120;
 const NAME_DISPLAY_MAX     = 14;
-
+const SKIP_COMPONENTS = [
+    'OAuthCallbackCtrl',
+    'OAuthCallback'
+];
 export default class DeploymentTool extends LightningElement {
 
     // ── Tab ─────────────────────────────────────────────────
@@ -144,40 +147,42 @@ export default class DeploymentTool extends LightningElement {
     // Load orgs from User Story → refresh tokens
     // ══════════════════════════════════════════════════════════
     async loadOrgsFromUserStory() {
-        this.isOrgLoading = true;
-        this.orgLoadError = '';
+    this.isOrgLoading = true;
+    this.orgLoadError = '';
+    this.orgsReady    = false;
+    try {
+        const orgDetails = await getOrgDetailsFromUserStory({
+            userStoryId: this.userStoryId
+        });
+
+        this.sourceOrgName = orgDetails.sourceOrgName || 'Source Org';
+        this.targetOrgName = orgDetails.targetOrgName || 'Target Org';
+
+        const sourceToken = await refreshAccessToken({
+            refreshToken : orgDetails.sourceRefreshToken,
+            orgType      : orgDetails.sourceOrgType,
+            orgName      : orgDetails.sourceOrgName   // ← SIRF YEH ADD HUA
+        });
+        this.sourceAccessToken = sourceToken.accessToken;
+        this.sourceInstanceUrl = sourceToken.instanceUrl;
+
+        const targetToken = await refreshAccessToken({
+            refreshToken : orgDetails.targetRefreshToken,
+            orgType      : orgDetails.targetOrgType,
+            orgName      : orgDetails.targetOrgName   // ← SIRF YEH ADD HUA
+        });
+        this.targetAccessToken = targetToken.accessToken;
+        this.targetInstanceUrl = targetToken.instanceUrl;
+
+        this.orgsReady = true;
+
+    } catch(e) {
+        this.orgLoadError = this.getError(e);
         this.orgsReady    = false;
-        try {
-            const orgDetails = await getOrgDetailsFromUserStory({
-                userStoryId: this.userStoryId
-            });
-
-            this.sourceOrgName = orgDetails.sourceOrgName || 'Source Org';
-            this.targetOrgName = orgDetails.targetOrgName || 'Target Org';
-
-            const sourceToken = await refreshAccessToken({
-                refreshToken : orgDetails.sourceRefreshToken,
-                orgType      : orgDetails.sourceOrgType
-            });
-            this.sourceAccessToken = sourceToken.accessToken;
-            this.sourceInstanceUrl = sourceToken.instanceUrl;
-
-            const targetToken = await refreshAccessToken({
-                refreshToken : orgDetails.targetRefreshToken,
-                orgType      : orgDetails.targetOrgType
-            });
-            this.targetAccessToken = targetToken.accessToken;
-            this.targetInstanceUrl = targetToken.instanceUrl;
-
-            this.orgsReady = true;
-
-        } catch(e) {
-            this.orgLoadError = this.getError(e);
-            this.orgsReady    = false;
-        } finally {
-            this.isOrgLoading = false;
-        }
+    } finally {
+        this.isOrgLoading = false;
     }
+}
 
     // ══════════════════════════════════════════════════════════
     // ORG BANNER GETTERS
@@ -778,6 +783,7 @@ ${componentLines}
         const byType = {};
         for (const comp of this.selectedComponents) {
             const type = comp.metadataType, name = comp.name;
+             if (SKIP_COMPONENTS.includes(name)) continue
             if ((type === 'CustomObject' || type === 'CustomMetadataType') &&
                 !name.endsWith('__c') && !name.endsWith('__mdt')) continue;
             if (!byType[type]) byType[type] = [];
@@ -867,15 +873,26 @@ ${componentLines}
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         const zip          = await JSZip.loadAsync(bytes);
         const files        = [];
-        const SKIP_FOLDERS = ['layouts', 'profiles'];
+       const SKIP_FOLDERS = ['layouts', 'profiles'];
+const SKIP_FILES = [
+    'OAuthCallbackCtrl.cls',
+    'OAuthCallbackCtrl.cls-meta.xml',
+    'OAuthCallback.page',
+    'OAuthCallback.page-meta.xml'
+];
 
-        for (const [filename, fileObj] of Object.entries(zip.files)) {
-            if (!fileObj.dir) {
-                let cleanPath = filename.replace(/^unpackaged\//, '');
-                if (cleanPath.endsWith('.flexipage')) cleanPath = cleanPath + '-meta.xml';
-                const shouldSkip = SKIP_FOLDERS.some(folder =>
-                    cleanPath.includes(`/${folder}/`) || cleanPath.startsWith(`${folder}/`)
-                );
+for (const [filename, fileObj] of Object.entries(zip.files)) {
+    if (!fileObj.dir) {
+        let cleanPath = filename.replace(/^unpackaged\//, '');
+        if (cleanPath.endsWith('.flexipage')) cleanPath = cleanPath + '-meta.xml';
+        
+        // File name check
+        const fileName = cleanPath.split('/').pop();
+        if (SKIP_FILES.some(skip => fileName === skip)) continue;
+        
+        const shouldSkip = SKIP_FOLDERS.some(folder =>
+            cleanPath.includes(`/${folder}/`) || cleanPath.startsWith(`${folder}/`)
+        );
                 if (shouldSkip) continue;
                 if (cleanPath.endsWith('.object')) {
                     let xmlStr = await fileObj.async('string');

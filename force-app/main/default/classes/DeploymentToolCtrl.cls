@@ -259,74 +259,85 @@ public without sharing class DeploymentToolCtrl {
     // ═══════════════════════════════════════════════════════════
     // Refresh Access Token
     // ═══════════════════════════════════════════════════════════
-    @AuraEnabled
-    public static Map<String, String> refreshAccessToken(String refreshToken, String orgType) {
-        try {
-            OAuth_Config__mdt config = [
-                SELECT Client_Id__c, Client_Secret__c, Callback_Url__c
-                FROM OAuth_Config__mdt
-                WHERE App_Type__c = 'Salesforce'
-                LIMIT 1
-            ];
+   @AuraEnabled
+public static Map<String, String> refreshAccessToken(String refreshToken, String orgType, String orgName) {
+    try {
+      List<OAuth_Config__mdt> configs = [
+    SELECT Client_Id__c, Client_Secret__c, Callback_Url__c
+    FROM OAuth_Config__mdt
+    WHERE App_Type__c = 'Salesforce'
+    AND DeveloperName = :orgName.capitalize()
+    LIMIT 1
+];
 
-            Boolean isSandbox     = (orgType != null && orgType.toLowerCase() == 'sandbox');
-            String  orgTypeLabel  = isSandbox ? 'Sandbox' : 'Production';
-            String  tokenEndpoint = isSandbox
-                ? 'https://test.salesforce.com/services/oauth2/token'
-                : 'https://login.salesforce.com/services/oauth2/token';
+if(configs.isEmpty()) {
+    configs = [
+        SELECT Client_Id__c, Client_Secret__c, Callback_Url__c
+        FROM OAuth_Config__mdt
+        WHERE DeveloperName = 'Default'
+        LIMIT 1
+    ];
+}
 
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint(tokenEndpoint);
-            req.setMethod('POST');
-            req.setHeader('Content-Type', 'application/x-www-form-urlencoded');
-            req.setBody(
-                'grant_type=refresh_token'
-                + '&client_id='     + EncodingUtil.urlEncode(config.Client_Id__c,     'UTF-8')
-                + '&client_secret=' + EncodingUtil.urlEncode(config.Client_Secret__c, 'UTF-8')
-                + '&refresh_token=' + EncodingUtil.urlEncode(refreshToken,            'UTF-8')
-            );
-            req.setTimeout(TIMEOUT_MS);
+OAuth_Config__mdt config = configs[0];
+        Boolean isSandbox     = (orgType != null && orgType.toLowerCase() == 'sandbox');
+        String  orgTypeLabel  = isSandbox ? 'Sandbox' : 'Production';
+        String  tokenEndpoint = isSandbox
+            ? 'https://test.salesforce.com/services/oauth2/token'
+            : 'https://login.salesforce.com/services/oauth2/token';
 
-            HttpResponse res      = new Http().send(req);
-            String       respBody = res.getBody();
+        HttpRequest req = new HttpRequest();
+        req.setEndpoint(tokenEndpoint);
+        req.setMethod('POST');
+        req.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+        req.setBody(
+            'grant_type=refresh_token'
+            + '&client_id='     + EncodingUtil.urlEncode(config.Client_Id__c,     'UTF-8')
+            + '&client_secret=' + EncodingUtil.urlEncode(config.Client_Secret__c, 'UTF-8')
+            + '&refresh_token=' + EncodingUtil.urlEncode(refreshToken,            'UTF-8')
+        );
+        req.setTimeout(TIMEOUT_MS);
 
-            if (res.getStatusCode() != 200) {
-                String friendlyMsg;
-                if (respBody.contains('invalid_grant') || respBody.contains('expired')) {
-                    friendlyMsg = '⚠️ ' + orgTypeLabel + ' org refresh token has either expired or been revoked.\n'
-                        + 'Please go to the Environments app and click the "Connect Org" button for this org to reconnect it.\n'
-                        + 'This will generate a fresh token.';
-                } else if (respBody.contains('invalid_client')) {
-                    friendlyMsg = '⚠️ Connected App credentials are incorrect (' + orgTypeLabel + ').\n'
-                        + 'Please check the Client_Id and Client_Secret in OAuth_Config__mdt.';
-                } else if (respBody.contains('inactive_user') || respBody.contains('inactive_org')) {
-                    friendlyMsg = '⚠️ ' + orgTypeLabel + ' org or user is inactive.\n'
-                        + 'Please contact the Salesforce admin and check the org/user status.';
-                } else {
-                    friendlyMsg = 'Token refresh failed (' + res.getStatusCode() + ') for ' + orgTypeLabel + ' org: ' + respBody;
-                }
-                throw createAuraException(friendlyMsg);
+        HttpResponse res      = new Http().send(req);
+        String       respBody = res.getBody();
+
+        if (res.getStatusCode() != 200) {
+            String friendlyMsg;
+            if (respBody.contains('invalid_grant') || respBody.contains('expired')) {
+                friendlyMsg = '⚠️ ' + orgTypeLabel + ' org refresh token has either expired or been revoked.\n'
+                    + 'Please go to the Environments app and click the "Connect Org" button for this org to reconnect it.\n'
+                    + 'This will generate a fresh token.';
+            } else if (respBody.contains('invalid_client')) {
+                friendlyMsg = '⚠️ Connected App credentials are incorrect (' + orgTypeLabel + ').\n'
+                    + 'Please check the Client_Id and Client_Secret in OAuth_Config__mdt.';
+            } else if (respBody.contains('inactive_user') || respBody.contains('inactive_org')) {
+                friendlyMsg = '⚠️ ' + orgTypeLabel + ' org or user is inactive.\n'
+                    + 'Please contact the Salesforce admin and check the org/user status.';
+            } else {
+                friendlyMsg = 'Token refresh failed (' + res.getStatusCode() + ') for ' + orgTypeLabel + ' org: ' + respBody;
             }
-
-            Map<String, Object> parsed      = (Map<String, Object>) JSON.deserializeUntyped(respBody);
-            String              accessToken = String.valueOf(parsed.get('access_token'));
-            String              instanceUrl = String.valueOf(parsed.get('instance_url'));
-
-            if (String.isBlank(accessToken) || accessToken == 'null')
-                throw createAuraException('⚠️ ' + orgTypeLabel + ' org access token is blank.\nPlease go to the Environments app and connect the org again.');
-            if (String.isBlank(instanceUrl) || instanceUrl == 'null')
-                throw createAuraException('⚠️ ' + orgTypeLabel + ' org instance URL is blank.\nGo to the Environments app and reconnect the org again.');
-
-            return new Map<String, String>{
-                'accessToken' => accessToken,
-                'instanceUrl' => instanceUrl
-            };
-        } catch (AuraHandledException e) {
-            throw e;
-        } catch (Exception e) {
-            throw createAuraException('refreshAccessToken: ' + e.getMessage());
+            throw createAuraException(friendlyMsg);
         }
+
+        Map<String, Object> parsed      = (Map<String, Object>) JSON.deserializeUntyped(respBody);
+        String              accessToken = String.valueOf(parsed.get('access_token'));
+        String              instanceUrl = String.valueOf(parsed.get('instance_url'));
+
+        if (String.isBlank(accessToken) || accessToken == 'null')
+            throw createAuraException('⚠️ ' + orgTypeLabel + ' org access token is blank.\nPlease go to the Environments app and connect the org again.');
+        if (String.isBlank(instanceUrl) || instanceUrl == 'null')
+            throw createAuraException('⚠️ ' + orgTypeLabel + ' org instance URL is blank.\nGo to the Environments app and reconnect the org again.');
+
+        return new Map<String, String>{
+            'accessToken' => accessToken,
+            'instanceUrl' => instanceUrl
+        };
+    } catch (AuraHandledException e) {
+        throw e;
+    } catch (Exception e) {
+        throw createAuraException('refreshAccessToken: ' + e.getMessage());
     }
+}
 
     // ═══════════════════════════════════════════════════════════
     // Fetch components from dynamic org

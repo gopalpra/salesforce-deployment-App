@@ -110,7 +110,8 @@ public without sharing class EnvironmentManagerCtrl {
             String              refreshToken = String.valueOf(tokenData.get('refresh_token'));
             String              instanceUrl  = String.valueOf(tokenData.get('instance_url'));
 
-            String orgName = fetchOrgName(accessToken, instanceUrl);
+            //String orgName = fetchOrgName(accessToken, instanceUrl);
+            String orgName = environmentName;
 
             Environment__c env = upsertEnvironmentRecord(
                 environmentName, orgName, orgType, refreshToken, instanceUrl
