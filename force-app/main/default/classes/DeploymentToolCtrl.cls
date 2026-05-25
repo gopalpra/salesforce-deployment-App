@@ -171,11 +171,11 @@ public without sharing class DeploymentToolCtrl {
                 return (String.isBlank(branch) || branch == 'null') ? 'main' : branch;
             }
         } catch (Exception e) {}
-        return 'main'; // fallback
+        return 'main';
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GITHUB HTTP HELPERS — dynamic token
+    // GITHUB HTTP HELPERS
     // ═══════════════════════════════════════════════════════════
     private static HttpResponse githubGet(String accessToken, String path) {
         HttpRequest req = new HttpRequest();
@@ -595,7 +595,7 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GitHub: Get Main Branch SHA (dynamic default branch)
+    // GitHub: Get Main Branch SHA
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String getMainBranchSha(String userStoryId) {
@@ -621,7 +621,7 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GitHub: Create Feature Branch (dynamic default branch)
+    // GitHub: Create Feature Branch
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String createFeatureBranch(String branchName, String sha, String userStoryId) {
@@ -643,7 +643,6 @@ public without sharing class DeploymentToolCtrl {
 
     // ═══════════════════════════════════════════════════════════
     // GitHub: Push Multiple Files
-    // ✅ CHANGED: Boolean → String (commit SHA return )
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String pushMultipleFilesToGitHub(String branchName, String commitMessage, List<Map<String, String>> files, String userStoryId) {
@@ -663,7 +662,6 @@ public without sharing class DeploymentToolCtrl {
             String baseTreeSha = String.valueOf(
                 ((Map<String, Object>)((Map<String, Object>) JSON.deserializeUntyped(commitRes.getBody())).get('tree')).get('sha'));
 
-            // ── Batch blob creation ─────────────────────────
             List<Map<String, Object>>       treeNodes = new List<Map<String, Object>>();
             List<List<Map<String, String>>> batches   = new List<List<Map<String, String>>>();
             List<Map<String, String>>       current   = new List<Map<String, String>>();
@@ -700,7 +698,6 @@ public without sharing class DeploymentToolCtrl {
                 new Map<String, Object>{ 'sha' => newCommitSha });
             checkGitHubRateLimit(updateRefRes, 'Update Ref');
 
-            
             return newCommitSha;
 
         } catch (AuraHandledException e) {
@@ -711,15 +708,13 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ✅ NEW METHOD — Save Commit + Component Records
-// Save the commit SHA received from GitHub into Commit__c
-// Create separate Component__c entries for each component
-// Duplicate check: if the same component already exists, it will be updated instead of creating a new record
+    // ✅ UPDATED — Save Commit + Component Records (branchName added)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String saveCommitAndComponentRecords(
             String commitSha,
             String commitMessage,
+            String branchName,
             String userStoryId,
             List<Map<String, String>> components) {
         try {
@@ -727,15 +722,14 @@ public without sharing class DeploymentToolCtrl {
             if (String.isBlank(userStoryId))  throw createAuraException('User Story ID blank hai.');
             if (components == null || components.isEmpty()) throw createAuraException('Components list empty hai.');
 
-            // ── Step 1: Create a Commit__c record ────────────
             Commit__c commitRec = new Commit__c(
-                Commit_ID__c      = commitSha,
-                Commit_Message__c = commitMessage,
-                User_Story_Name__c   = userStoryId
+                Commit_ID__c       = commitSha,
+                Commit_Message__c  = commitMessage,
+                Branch_Name__c     = branchName,    // ✅ branch save hogi
+                User_Story_Name__c = userStoryId
             );
             insert commitRec;
 
-            // ── Step 2: Fetch existing Component__c records (duplicate check)──
             List<String> componentNames = new List<String>();
             for (Map<String, String> comp : components) {
                 componentNames.add(comp.get('name'));
@@ -744,37 +738,33 @@ public without sharing class DeploymentToolCtrl {
             List<Component__c> existingComponents = [
                 SELECT Id, Component_Name__c, Commit_ID__c, Metadata_Type__c
                 FROM Component__c
-                WHERE User_Story_Name__c= :userStoryId
+                WHERE User_Story_Name__c = :userStoryId
                 AND Component_Name__c IN :componentNames
             ];
 
-            // Create Map: componentName → existing record
             Map<String, Component__c> existingMap = new Map<String, Component__c>();
             for (Component__c ec : existingComponents) {
                 existingMap.put(ec.Component_Name__c, ec);
             }
 
-            // ── Step 3: Decide whether to insert or update the records. ───────
             List<Component__c> toInsert = new List<Component__c>();
             List<Component__c> toUpdate = new List<Component__c>();
 
             for (Map<String, String> comp : components) {
-                String compName     = comp.get('name');
-                String compType     = comp.containsKey('metadataType') ? comp.get('metadataType') : '';
+                String compName = comp.get('name');
+                String compType = comp.containsKey('metadataType') ? comp.get('metadataType') : '';
 
                 if (existingMap.containsKey(compName)) {
-                    // ✅ If it already exists, only update the latest Commit_ID
                     Component__c existing = existingMap.get(compName);
-                    existing.Commit_ID__c    = commitSha;
+                    existing.Commit_ID__c     = commitSha;
                     existing.Metadata_Type__c = compType;
                     toUpdate.add(existing);
                 } else {
-                    // ✅If it’s a new component, insert it
                     toInsert.add(new Component__c(
-                        Component_Name__c = compName,
-                        Commit_ID__c      = commitSha,
-                        Metadata_Type__c  = compType,
-                        User_Story_Name__c    = userStoryId
+                        Component_Name__c  = compName,
+                        Commit_ID__c       = commitSha,
+                        Metadata_Type__c   = compType,
+                        User_Story_Name__c = userStoryId
                     ));
                 }
             }
@@ -792,7 +782,71 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GitHub: Create Pull Request (dynamic base branch)
+    // ✅ NEW — Create or View PR for User Story
+    // ═══════════════════════════════════════════════════════════
+    @AuraEnabled(cacheable=false)
+    public static Map<String, Object> createPRForUserStory(String userStoryId) {
+        try {
+            List<Commit__c> commits = [
+                SELECT Branch_Name__c
+                FROM Commit__c
+                WHERE User_Story_Name__c = :userStoryId
+                AND Branch_Name__c != null
+                ORDER BY CreatedDate DESC
+                LIMIT 1
+            ];
+
+            if (commits.isEmpty() || String.isBlank(commits[0].Branch_Name__c)) {
+                throw createAuraException(
+                    'No commit found. Please deploy using the Deployment Tool first.'
+                );
+            }
+
+            String branchName = commits[0].Branch_Name__c;
+            GitHub_Connection__c conn  = getConnectionFromUserStory(userStoryId);
+            String               owner = conn.Repo_Owner__c;
+            String               repo  = conn.Repo_Name__c;
+            String               token = conn.Access_Token__c;
+
+            HttpResponse res = githubGet(token,
+                repoPath(owner, repo,
+                    '/pulls?state=open&head=' +
+                    EncodingUtil.urlEncode(owner + ':' + branchName, 'UTF-8') +
+                    '&per_page=1'));
+            checkGitHubRateLimit(res, 'createPRForUserStory');
+
+            if (res.getStatusCode() == 200) {
+                List<Object> prs = (List<Object>) JSON.deserializeUntyped(res.getBody());
+                if (prs != null && !prs.isEmpty()) {
+                    Map<String, Object> pr = (Map<String, Object>) prs[0];
+                    return new Map<String, Object>{
+                        'url'   => String.valueOf(pr.get('html_url')),
+                        'isNew' => false
+                    };
+                }
+            }
+
+            String defaultBranch = getDefaultBranch(token, owner, repo);
+            String compareUrl    =
+                'https://github.com/' + owner + '/' + repo +
+                '/compare/' + defaultBranch + '...' +
+                EncodingUtil.urlEncode(branchName, 'UTF-8') +
+                '?expand=1';
+
+            return new Map<String, Object>{
+                'url'   => compareUrl,
+                'isNew' => true
+            };
+
+        } catch (AuraHandledException e) {
+            throw e;
+        } catch (Exception e) {
+            throw createAuraException('createPRForUserStory: ' + e.getMessage());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // GitHub: Create Pull Request
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
     public static String createPullRequest(
@@ -1012,7 +1066,6 @@ public without sharing class DeploymentToolCtrl {
 
     // ═══════════════════════════════════════════════════════════
     // ⛔ TEMPORARILY DISABLED — Deploy to Target Org
-    
     // ═══════════════════════════════════════════════════════════
     /*
     @AuraEnabled
@@ -1036,7 +1089,6 @@ public without sharing class DeploymentToolCtrl {
                 '<met:singlePackage>true</met:singlePackage>' +
                 '</met:DeployOptions>' +
                 '</met:deploy></soapenv:Body></soapenv:Envelope>';
-
             HttpRequest req = new HttpRequest();
             req.setEndpoint(instanceUrl + '/services/Soap/m/' + API_VERSION);
             req.setMethod('POST');
@@ -1044,7 +1096,6 @@ public without sharing class DeploymentToolCtrl {
             req.setHeader('SOAPAction', '""');
             req.setBody(soap);
             req.setTimeout(TIMEOUT_MS);
-
             HttpResponse res = new Http().send(req);
             if (res.getStatusCode() != 200) {
                 String fault = extractTagValue(res.getBody(), 'faultstring');
@@ -1063,7 +1114,6 @@ public without sharing class DeploymentToolCtrl {
 
     // ═══════════════════════════════════════════════════════════
     // ⛔ TEMPORARILY DISABLED — Check Deploy Status
-    
     // ═══════════════════════════════════════════════════════════
     /*
     @AuraEnabled
@@ -1077,7 +1127,6 @@ public without sharing class DeploymentToolCtrl {
                 '<met:asyncProcessId>' + jobId + '</met:asyncProcessId>' +
                 '<met:includeDetails>true</met:includeDetails>' +
                 '</met:checkDeployStatus></soapenv:Body></soapenv:Envelope>';
-
             HttpRequest req = new HttpRequest();
             req.setEndpoint(instanceUrl + '/services/Soap/m/' + API_VERSION);
             req.setMethod('POST');
@@ -1085,18 +1134,15 @@ public without sharing class DeploymentToolCtrl {
             req.setHeader('SOAPAction', '""');
             req.setBody(soap);
             req.setTimeout(TIMEOUT_MS);
-
             HttpResponse res  = new Http().send(req);
             String       body = res.getBody();
             if (res.getStatusCode() != 200) {
                 String fault = extractTagValue(body, 'faultstring');
                 throw createAuraException('checkDeployStatus Error: ' + (fault != null ? fault : body));
             }
-
             String  status   = extractTagValue(body, 'status');
             Boolean done     = status == 'Succeeded' || status == 'Failed' || status == 'Canceled';
             String  errorMsg = '';
-
             if (status == 'Failed') {
                 String problem  = extractTagValue(body, 'problem');
                 String fileName = extractTagValue(body, 'fileName');
@@ -1107,7 +1153,6 @@ public without sharing class DeploymentToolCtrl {
                     if (String.isBlank(errorMsg)) errorMsg = 'Deploy failed. Check target org logs.';
                 }
             }
-
             Integer numberComponentsDeployed = 0;
             Integer numberComponentsTotal    = 0;
             try {
@@ -1116,7 +1161,6 @@ public without sharing class DeploymentToolCtrl {
                 if (String.isNotBlank(deployedStr)) numberComponentsDeployed = Integer.valueOf(deployedStr);
                 if (String.isNotBlank(totalStr))    numberComponentsTotal    = Integer.valueOf(totalStr);
             } catch (Exception ex) {}
-
             return new Map<String, Object>{
                 'status'                   => status,
                 'done'                     => done,

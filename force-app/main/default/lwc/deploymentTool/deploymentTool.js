@@ -617,8 +617,10 @@ export default class DeploymentTool extends LightningElement {
             await saveCommitAndComponentRecords({
                 commitSha   : commitSha,
                 commitMessage: commitMsg,
+                branchName   : branchName,
                 userStoryId : this.userStoryId,
                 components  : componentData
+
             });
 
             // ── Final Status ──────────────────────────────────────────

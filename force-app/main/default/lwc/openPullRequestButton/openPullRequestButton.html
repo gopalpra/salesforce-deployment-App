@@ -1,0 +1,17 @@
+<template>
+    <lightning-button
+        label={buttonLabel}
+        variant="brand"
+        icon-name="utility:new_window"
+        disabled={isLoading}
+        onclick={handleOpenPR}>
+    </lightning-button>
+
+    <template if:true={errorMessage}>
+        <div style="margin-top:6px;">
+            <p style="color:#c23934; font-size:12px;">
+                ⚠️ {errorMessage}
+            </p>
+        </div>
+    </template>
+</template>
