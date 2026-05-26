@@ -20,6 +20,7 @@ import refreshAccessToken             from '@salesforce/apex/DeploymentToolCtrl.
 // ⛔ TEMPORARILY DISABLED — 
 // import startDeployToTargetOrg     from '@salesforce/apex/DeploymentToolCtrl.startDeployToTargetOrg';
 // import checkDeployStatus          from '@salesforce/apex/DeploymentToolCtrl.checkDeployStatus';
+import getUserStoryName from '@salesforce/apex/DeploymentToolCtrl.getUserStoryName';
 
 
 import saveCommitAndComponentRecords  from '@salesforce/apex/DeploymentToolCtrl.saveCommitAndComponentRecords';
@@ -859,15 +860,13 @@ export default class DeploymentTool extends LightningElement {
     // GIT BRANCH SETUP
     // ══════════════════════════════════════════════════════════
     async setupGitBranch() {
-        const sha         = await getMainBranchSha({ userStoryId: this.userStoryId });
-        const uniqueTypes = [...new Set(this.selectedComponents.map(c => c.metadataType))]
-            .join('_').substring(0, 40);
-        const safeName    = this.selectedComponents[0].name
-            .replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
-        const branchName  = `deploy/${uniqueTypes}-${safeName}-${Date.now()}`;
-        await createFeatureBranch({ branchName, sha, userStoryId: this.userStoryId });
-        return branchName;
-    }
+    const sha        = await getMainBranchSha({ userStoryId: this.userStoryId });
+    const usName     = await getUserStoryName({ userStoryId: this.userStoryId });
+    const safeName   = (usName || 'US').replace(/[^a-zA-Z0-9-]/g, '-');
+    const branchName = `feature/${safeName}`;
+    await createFeatureBranch({ branchName, sha, userStoryId: this.userStoryId });
+    return branchName;
+}
 
     // ══════════════════════════════════════════════════════════
     // PUSH FILES

@@ -718,14 +718,14 @@ public without sharing class DeploymentToolCtrl {
             String userStoryId,
             List<Map<String, String>> components) {
         try {
-            if (String.isBlank(commitSha))    throw createAuraException('Commit SHA blank hai.');
-            if (String.isBlank(userStoryId))  throw createAuraException('User Story ID blank hai.');
-            if (components == null || components.isEmpty()) throw createAuraException('Components list empty hai.');
+            if (String.isBlank(commitSha))    throw createAuraException('Commit SHA is blank');
+            if (String.isBlank(userStoryId))  throw createAuraException('User Story ID is blank');
+            if (components == null || components.isEmpty()) throw createAuraException('Components list is empty');
 
             Commit__c commitRec = new Commit__c(
                 Commit_ID__c       = commitSha,
                 Commit_Message__c  = commitMessage,
-                Branch_Name__c     = branchName,    // ✅ branch save hogi
+                Branch_Name__c     = branchName,    
                 User_Story_Name__c = userStoryId
             );
             insert commitRec;
@@ -826,17 +826,34 @@ public without sharing class DeploymentToolCtrl {
                 }
             }
 
-            String defaultBranch = getDefaultBranch(token, owner, repo);
-            String compareUrl    =
-                'https://github.com/' + owner + '/' + repo +
-                '/compare/' + defaultBranch + '...' +
-                EncodingUtil.urlEncode(branchName, 'UTF-8') +
-                '?expand=1';
+           String defaultBranch = getDefaultBranch(token, owner, repo);
 
-            return new Map<String, Object>{
-                'url'   => compareUrl,
-                'isNew' => true
-            };
+String prTitle = '';
+try {
+    User_Story_Name__c us = [
+        SELECT Name, Title__c
+        FROM User_Story_Name__c
+        WHERE Id = :userStoryId
+        LIMIT 1
+    ];
+    prTitle = String.isNotBlank(us.Title__c) ? us.Title__c : us.Name;
+} catch (Exception ex) {
+    prTitle = '';
+}
+
+String compareUrl =
+    'https://github.com/' + owner + '/' + repo +
+    '/compare/' + defaultBranch + '...' +
+    EncodingUtil.urlEncode(branchName, 'UTF-8') +
+    '?expand=1' +
+    (String.isNotBlank(prTitle)
+        ? '&title=' + EncodingUtil.urlEncode(prTitle, 'UTF-8')
+        : '');
+
+return new Map<String, Object>{
+    'url'   => compareUrl,
+    'isNew' => true
+};
 
         } catch (AuraHandledException e) {
             throw e;
@@ -844,6 +861,21 @@ public without sharing class DeploymentToolCtrl {
             throw createAuraException('createPRForUserStory: ' + e.getMessage());
         }
     }
+
+     @AuraEnabled(cacheable=false)
+public static String getUserStoryName(String userStoryId) {
+    try {
+        User_Story_Name__c us = [
+            SELECT Name
+            FROM User_Story_Name__c
+            WHERE Id = :userStoryId
+            LIMIT 1
+        ];
+        return us.Name;
+    } catch (Exception e) {
+        throw createAuraException('getUserStoryName: ' + e.getMessage());
+    }
+}
 
     // ═══════════════════════════════════════════════════════════
     // GitHub: Create Pull Request
