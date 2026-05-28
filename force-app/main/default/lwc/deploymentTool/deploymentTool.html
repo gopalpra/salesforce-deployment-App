@@ -269,7 +269,7 @@
                                     </template>
                                 </div>
 
-            </template>
+                            </template>
 
                         </div><!-- end Deploy panel -->
 
@@ -425,6 +425,7 @@
 
         </div>
 
+        <!-- Progress Bar -->
         <template if:true={showProgress}>
             <div class="slds-m-around_medium">
                 <lightning-progress-bar value={progressValue} size="large"></lightning-progress-bar>
@@ -432,17 +433,171 @@
             </div>
         </template>
 
+        <!-- Loading Spinner -->
         <template if:true={isLoading}>
             <div class="slds-m-around_medium">
                 <lightning-spinner alternative-text="Processing..." size="small"></lightning-spinner>
             </div>
         </template>
 
+        <!-- Status Message -->
         <template if:true={statusMessage}>
             <div class="slds-m-around_medium">
                 <p class={statusClass}><strong>{statusMessage}</strong></p>
             </div>
         </template>
+
+        <!-- ══════════════════════════════════════════════════════
+             ✅ COMMIT MODAL — Deploy button click hone pe khulta hai
+             ══════════════════════════════════════════════════════ -->
+        <template if:true={showCommitModal}>
+            <section role="dialog" tabindex="-1" aria-modal="true"
+                     class="slds-modal slds-fade-in-open">
+                <div class="slds-modal__container">
+
+                    <!-- Modal Header -->
+                    <header class="slds-modal__header">
+                        <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse"
+                                title="Close" onclick={handleModalCancel}>
+                            <lightning-icon icon-name="utility:close"
+                                            alternative-text="Close"
+                                            size="small"></lightning-icon>
+                        </button>
+                        <h2 class="slds-modal__title slds-hyphenate">
+                            🚀 Commit to GitHub
+                        </h2>
+                    </header>
+
+                    <!-- Modal Body -->
+                    <div class="slds-modal__content slds-p-around_medium">
+
+                        <!-- Spinner: existing branch fetch hone tak -->
+                        <template if:true={isModalLoading}>
+                            <div class="slds-align_absolute-center slds-p-around_large"
+                                 style="min-height:120px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                                <lightning-spinner alternative-text="Loading..."
+                                                   size="medium"></lightning-spinner>
+                                <p class="slds-m-top_small slds-text-color_weak slds-text-body_small">
+                                    Checking existing branch...
+                                </p>
+                            </div>
+                        </template>
+
+                        <!-- Body content: loading khatam hone ke baad -->
+                        <template if:false={isModalLoading}>
+
+                            <!-- Components count summary -->
+                            <div class="slds-box slds-theme_shade slds-m-bottom_medium"
+                                 style="border-radius:4px;">
+                                <p class="slds-text-body_regular">
+                                    <lightning-icon icon-name="utility:package"
+                                                    size="x-small"
+                                                    class="slds-m-right_x-small"></lightning-icon>
+                                    <strong>{selectedComponents.length}</strong> component(s) ready to commit
+                                </p>
+                            </div>
+
+                            <!-- Existing Branch info row -->
+                            <div class="slds-m-bottom_medium"
+                                 style="padding:8px 12px; background:#f3f2f2; border-radius:4px; border-left:3px solid #0070d2;">
+                                <p class="slds-text-body_small" style="color:#3e3e3c;">
+                                    <lightning-icon icon-name="utility:branch_merge"
+                                                    size="x-small"
+                                                    class="slds-m-right_xx-small"></lightning-icon>
+                                    {existingBranchInfo}
+                                </p>
+                            </div>
+
+                            <!-- Toggle — sirf tab dikhao jab existing branch ho -->
+                            <template if:true={hasExistingBranch}>
+                                <div class="slds-m-bottom_medium">
+                                    <lightning-input
+                                        type="toggle"
+                                        label="Create a new branch?"
+                                        message-toggle-active="Yes — delete existing branch &amp; close open PRs"
+                                        message-toggle-inactive="No — commit to existing branch"
+                                        checked={createNewBranch}
+                                        onchange={handleNewBranchToggle}>
+                                    </lightning-input>
+                                </div>
+
+                                <!-- ⚠️ Warning box: sirf tab jab toggle ON ho -->
+                                <template if:true={showNewBranchWarning}>
+                                    <div style="background:#fff3cd; border:1px solid #f0ad4e;
+                                                border-radius:4px; padding:10px 14px;
+                                                margin-bottom:12px; display:flex; align-items:flex-start; gap:8px;">
+                                        <lightning-icon icon-name="utility:warning"
+                                                        size="x-small"
+                                                        style="color:#c23934; flex-shrink:0; margin-top:2px;">
+                                        </lightning-icon>
+                                        <div>
+                                            <p class="slds-text-body_small" style="font-weight:600; color:#c23934;">
+                                                Warning: This action cannot be undone!
+                                            </p>
+                                            <p class="slds-text-body_small slds-m-top_xx-small" style="color:#3e3e3c;">
+                                                Branch <strong>{existingBranchName}</strong> will be
+                                                permanently deleted and all its open Pull Requests
+                                                will be closed.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </template>
+
+                            <!-- Pehli baar: no existing branch info -->
+                            <template if:false={hasExistingBranch}>
+                                <div style="background:#eaf5ea; border:1px solid #2e844a;
+                                            border-radius:4px; padding:10px 14px; margin-bottom:12px;
+                                            display:flex; align-items:center; gap:8px;">
+                                    <lightning-icon icon-name="utility:info"
+                                                    size="x-small"
+                                                    style="color:#2e844a; flex-shrink:0;">
+                                    </lightning-icon>
+                                    <p class="slds-text-body_small" style="color:#2e844a;">
+                                        No existing branch found. A new feature branch will be
+                                        automatically created for this User Story.
+                                    </p>
+                                </div>
+                            </template>
+
+                        </template>
+                    </div>
+
+                    <!-- Modal Footer -->
+                    <footer class="slds-modal__footer">
+                        <lightning-button
+                            label="Cancel"
+                            variant="neutral"
+                            disabled={isModalLoading}
+                            onclick={handleModalCancel}>
+                        </lightning-button>
+
+                        <template if:true={createNewBranch}>
+                            <lightning-button
+                                label="🔄 Delete Old Branch &amp; Commit"
+                                variant="destructive"
+                                disabled={isModalConfirmDisabled}
+                                onclick={handleModalConfirm}>
+                            </lightning-button>
+                        </template>
+
+                        <template if:false={createNewBranch}>
+                            <lightning-button
+                                label="✅ Confirm &amp; Commit"
+                                variant="brand"
+                                disabled={isModalConfirmDisabled}
+                                onclick={handleModalConfirm}>
+                            </lightning-button>
+                        </template>
+                    </footer>
+
+                </div>
+            </section>
+
+            <!-- Modal backdrop -->
+            <div class="slds-backdrop slds-backdrop_open"></div>
+        </template>
+        <!-- ══ END COMMIT MODAL ══ -->
 
     </lightning-card>
 </template>

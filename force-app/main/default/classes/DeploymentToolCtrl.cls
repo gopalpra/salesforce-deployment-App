@@ -642,6 +642,93 @@ public without sharing class DeploymentToolCtrl {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // ✅ NEW — Get Existing Branch Name for User Story
+    // Returns the branch name from the latest commit of a User Story
+    // ═══════════════════════════════════════════════════════════
+    @AuraEnabled(cacheable=false)
+    public static String getExistingBranchForUserStory(String userStoryId) {
+        try {
+            List<Commit__c> commits = [
+                SELECT Branch_Name__c
+                FROM Commit__c
+                WHERE User_Story_Name__c = :userStoryId
+                AND Branch_Name__c != null
+                ORDER BY CreatedDate DESC
+                LIMIT 1
+            ];
+            if (commits.isEmpty()) return null;
+            return commits[0].Branch_Name__c;
+        } catch (Exception e) {
+            throw createAuraException('getExistingBranchForUserStory: ' + e.getMessage());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ✅ NEW — Delete Feature Branch + Close Open PR
+    // Called when user chooses "Create New Branch" in modal
+    // ═══════════════════════════════════════════════════════════
+    @AuraEnabled
+    public static Map<String, Object> deleteFeatureBranchAndClosePR(String branchName, String userStoryId) {
+        try {
+            GitHub_Connection__c conn  = getConnectionFromUserStory(userStoryId);
+            String               owner = conn.Repo_Owner__c;
+            String               repo  = conn.Repo_Name__c;
+            String               token = conn.Access_Token__c;
+
+            Integer closedPrCount  = 0;
+            Boolean branchDeleted  = false;
+
+            // ── Step 1: Find & close any open PRs for this branch ───────
+            String encodedHead = EncodingUtil.urlEncode(owner + ':' + branchName, 'UTF-8');
+            HttpResponse prRes = githubGet(token,
+                repoPath(owner, repo, '/pulls?state=open&head=' + encodedHead + '&per_page=10'));
+            checkGitHubRateLimit(prRes, 'deleteFeatureBranchAndClosePR - list PRs');
+
+            if (prRes.getStatusCode() == 200) {
+                List<Object> prs = (List<Object>) JSON.deserializeUntyped(prRes.getBody());
+                for (Object prObj : prs) {
+                    Map<String, Object> pr     = (Map<String, Object>) prObj;
+                    Integer             prNum  = (Integer) pr.get('number');
+                    HttpResponse        closeRes = githubPost(token, 'PATCH',
+                        repoPath(owner, repo, '/pulls/' + prNum),
+                        new Map<String, String>{ 'state' => 'closed' });
+                    checkGitHubRateLimit(closeRes, 'deleteFeatureBranchAndClosePR - close PR #' + prNum);
+                    if (closeRes.getStatusCode() == 200) closedPrCount++;
+                }
+            }
+
+            // ── Step 2: Delete the branch ────────────────────────────────
+            HttpRequest delReq = new HttpRequest();
+            delReq.setEndpoint(GITHUB_API_BASE + repoPath(owner, repo, '/git/refs/heads/' + branchName));
+            delReq.setMethod('DELETE');
+            delReq.setHeader('Authorization', 'Bearer ' + token);
+            delReq.setHeader('Accept', 'application/vnd.github+json');
+            delReq.setHeader('X-GitHub-Api-Version', '2022-11-28');
+            delReq.setTimeout(TIMEOUT_MS);
+            HttpResponse delRes = new Http().send(delReq);
+            checkGitHubRateLimit(delRes, 'deleteFeatureBranchAndClosePR - delete branch');
+
+            // 204 = deleted, 422 = branch didn't exist (both are fine)
+            branchDeleted = (delRes.getStatusCode() == 204 || delRes.getStatusCode() == 422);
+            if (!branchDeleted && delRes.getStatusCode() != 404) {
+                throw createAuraException(
+                    'Branch deletion failed (' + delRes.getStatusCode() + '): ' + delRes.getBody()
+                );
+            }
+
+            return new Map<String, Object>{
+                'branchDeleted' => branchDeleted,
+                'closedPrCount' => closedPrCount
+            };
+
+        } catch (AuraHandledException e) {
+            throw e;
+        } catch (Exception e) {
+            throw createAuraException('deleteFeatureBranchAndClosePR: ' + e.getMessage());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // GitHub: Push Multiple Files
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
@@ -725,7 +812,7 @@ public without sharing class DeploymentToolCtrl {
             Commit__c commitRec = new Commit__c(
                 Commit_ID__c       = commitSha,
                 Commit_Message__c  = commitMessage,
-                Branch_Name__c     = branchName,    
+                Branch_Name__c     = branchName,
                 User_Story_Name__c = userStoryId
             );
             insert commitRec;
@@ -826,34 +913,34 @@ public without sharing class DeploymentToolCtrl {
                 }
             }
 
-           String defaultBranch = getDefaultBranch(token, owner, repo);
+            String defaultBranch = getDefaultBranch(token, owner, repo);
 
-String prTitle = '';
-try {
-    User_Story_Name__c us = [
-        SELECT Name, Title__c
-        FROM User_Story_Name__c
-        WHERE Id = :userStoryId
-        LIMIT 1
-    ];
-    prTitle = String.isNotBlank(us.Title__c) ? us.Title__c : us.Name;
-} catch (Exception ex) {
-    prTitle = '';
-}
+            String prTitle = '';
+            try {
+                User_Story_Name__c us = [
+                    SELECT Name, Title__c
+                    FROM User_Story_Name__c
+                    WHERE Id = :userStoryId
+                    LIMIT 1
+                ];
+                prTitle = String.isNotBlank(us.Title__c) ? us.Title__c : us.Name;
+            } catch (Exception ex) {
+                prTitle = '';
+            }
 
-String compareUrl =
-    'https://github.com/' + owner + '/' + repo +
-    '/compare/' + defaultBranch + '...' +
-    EncodingUtil.urlEncode(branchName, 'UTF-8') +
-    '?expand=1' +
-    (String.isNotBlank(prTitle)
-        ? '&title=' + EncodingUtil.urlEncode(prTitle, 'UTF-8')
-        : '');
+            String compareUrl =
+                'https://github.com/' + owner + '/' + repo +
+                '/compare/' + defaultBranch + '...' +
+                EncodingUtil.urlEncode(branchName, 'UTF-8') +
+                '?expand=1' +
+                (String.isNotBlank(prTitle)
+                    ? '&title=' + EncodingUtil.urlEncode(prTitle, 'UTF-8')
+                    : '');
 
-return new Map<String, Object>{
-    'url'   => compareUrl,
-    'isNew' => true
-};
+            return new Map<String, Object>{
+                'url'   => compareUrl,
+                'isNew' => true
+            };
 
         } catch (AuraHandledException e) {
             throw e;
@@ -862,20 +949,20 @@ return new Map<String, Object>{
         }
     }
 
-     @AuraEnabled(cacheable=false)
-public static String getUserStoryName(String userStoryId) {
-    try {
-        User_Story_Name__c us = [
-            SELECT Name
-            FROM User_Story_Name__c
-            WHERE Id = :userStoryId
-            LIMIT 1
-        ];
-        return us.Name;
-    } catch (Exception e) {
-        throw createAuraException('getUserStoryName: ' + e.getMessage());
+    @AuraEnabled(cacheable=false)
+    public static String getUserStoryName(String userStoryId) {
+        try {
+            User_Story_Name__c us = [
+                SELECT Name
+                FROM User_Story_Name__c
+                WHERE Id = :userStoryId
+                LIMIT 1
+            ];
+            return us.Name;
+        } catch (Exception e) {
+            throw createAuraException('getUserStoryName: ' + e.getMessage());
+        }
     }
-}
 
     // ═══════════════════════════════════════════════════════════
     // GitHub: Create Pull Request
@@ -1095,118 +1182,6 @@ public static String getUserStoryName(String userStoryId) {
             throw createAuraException('syncDeploymentStatus: ' + e.getMessage());
         }
     }
-
-    // ═══════════════════════════════════════════════════════════
-    // ⛔ TEMPORARILY DISABLED — Deploy to Target Org
-    // ═══════════════════════════════════════════════════════════
-    /*
-    @AuraEnabled
-    public static String startDeployToTargetOrg(String zipBase64, String accessToken, String instanceUrl) {
-        try {
-            String soap =
-                '<?xml version="1.0" encoding="utf-8"?>' +
-                '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:met="http://soap.sforce.com/2006/04/metadata">' +
-                '<soapenv:Header><met:SessionHeader><met:sessionId>' + accessToken + '</met:sessionId></met:SessionHeader></soapenv:Header>' +
-                '<soapenv:Body><met:deploy>' +
-                '<met:ZipFile>' + zipBase64 + '</met:ZipFile>' +
-                '<met:DeployOptions>' +
-                '<met:allowMissingFiles>false</met:allowMissingFiles>' +
-                '<met:autoUpdatePackage>false</met:autoUpdatePackage>' +
-                '<met:checkOnly>false</met:checkOnly>' +
-                '<met:ignoreWarnings>true</met:ignoreWarnings>' +
-                '<met:performRetrieve>false</met:performRetrieve>' +
-                '<met:purgeOnDelete>false</met:purgeOnDelete>' +
-                '<met:rollbackOnError>true</met:rollbackOnError>' +
-                '<met:runAllTests>false</met:runAllTests>' +
-                '<met:singlePackage>true</met:singlePackage>' +
-                '</met:DeployOptions>' +
-                '</met:deploy></soapenv:Body></soapenv:Envelope>';
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint(instanceUrl + '/services/Soap/m/' + API_VERSION);
-            req.setMethod('POST');
-            req.setHeader('Content-Type', 'text/xml; charset=UTF-8');
-            req.setHeader('SOAPAction', '""');
-            req.setBody(soap);
-            req.setTimeout(TIMEOUT_MS);
-            HttpResponse res = new Http().send(req);
-            if (res.getStatusCode() != 200) {
-                String fault = extractTagValue(res.getBody(), 'faultstring');
-                throw createAuraException('Deploy Failed: ' + (fault != null ? fault : res.getBody()));
-            }
-            String jobId = extractTagValue(res.getBody(), 'id');
-            if (String.isBlank(jobId)) throw createAuraException('Deploy job ID is blank.');
-            return jobId;
-        } catch (AuraHandledException e) {
-            throw e;
-        } catch (Exception e) {
-            throw createAuraException('startDeployToTargetOrg: ' + e.getMessage());
-        }
-    }
-    */
-
-    // ═══════════════════════════════════════════════════════════
-    // ⛔ TEMPORARILY DISABLED — Check Deploy Status
-    // ═══════════════════════════════════════════════════════════
-    /*
-    @AuraEnabled
-    public static Map<String, Object> checkDeployStatus(String jobId, String accessToken, String instanceUrl) {
-        try {
-            String soap =
-                '<?xml version="1.0" encoding="utf-8"?>' +
-                '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:met="http://soap.sforce.com/2006/04/metadata">' +
-                '<soapenv:Header><met:SessionHeader><met:sessionId>' + accessToken + '</met:sessionId></met:SessionHeader></soapenv:Header>' +
-                '<soapenv:Body><met:checkDeployStatus>' +
-                '<met:asyncProcessId>' + jobId + '</met:asyncProcessId>' +
-                '<met:includeDetails>true</met:includeDetails>' +
-                '</met:checkDeployStatus></soapenv:Body></soapenv:Envelope>';
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint(instanceUrl + '/services/Soap/m/' + API_VERSION);
-            req.setMethod('POST');
-            req.setHeader('Content-Type', 'text/xml; charset=UTF-8');
-            req.setHeader('SOAPAction', '""');
-            req.setBody(soap);
-            req.setTimeout(TIMEOUT_MS);
-            HttpResponse res  = new Http().send(req);
-            String       body = res.getBody();
-            if (res.getStatusCode() != 200) {
-                String fault = extractTagValue(body, 'faultstring');
-                throw createAuraException('checkDeployStatus Error: ' + (fault != null ? fault : body));
-            }
-            String  status   = extractTagValue(body, 'status');
-            Boolean done     = status == 'Succeeded' || status == 'Failed' || status == 'Canceled';
-            String  errorMsg = '';
-            if (status == 'Failed') {
-                String problem  = extractTagValue(body, 'problem');
-                String fileName = extractTagValue(body, 'fileName');
-                if (String.isNotBlank(problem)) {
-                    errorMsg = (String.isNotBlank(fileName) ? fileName + ': ' : '') + problem;
-                } else {
-                    errorMsg = extractTagValue(body, 'errorMessage');
-                    if (String.isBlank(errorMsg)) errorMsg = 'Deploy failed. Check target org logs.';
-                }
-            }
-            Integer numberComponentsDeployed = 0;
-            Integer numberComponentsTotal    = 0;
-            try {
-                String deployedStr = extractTagValue(body, 'numberComponentsDeployed');
-                String totalStr    = extractTagValue(body, 'numberComponentsTotal');
-                if (String.isNotBlank(deployedStr)) numberComponentsDeployed = Integer.valueOf(deployedStr);
-                if (String.isNotBlank(totalStr))    numberComponentsTotal    = Integer.valueOf(totalStr);
-            } catch (Exception ex) {}
-            return new Map<String, Object>{
-                'status'                   => status,
-                'done'                     => done,
-                'errorMessage'             => errorMsg,
-                'numberComponentsDeployed' => numberComponentsDeployed,
-                'numberComponentsTotal'    => numberComponentsTotal
-            };
-        } catch (AuraHandledException e) {
-            throw e;
-        } catch (Exception e) {
-            throw createAuraException('checkDeployStatus: ' + e.getMessage());
-        }
-    }
-    */
 
     // ═══════════════════════════════════════════════════════════
     // UTILITY METHODS

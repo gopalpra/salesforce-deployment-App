@@ -17,13 +17,12 @@ import getPreviousCommits             from '@salesforce/apex/DeploymentToolCtrl.
 import saveDeploymentLog              from '@salesforce/apex/DeploymentToolCtrl.saveDeploymentLog';
 import getOrgDetailsFromUserStory     from '@salesforce/apex/DeploymentToolCtrl.getOrgDetailsFromUserStory';
 import refreshAccessToken             from '@salesforce/apex/DeploymentToolCtrl.refreshAccessToken';
-// ⛔ TEMPORARILY DISABLED — 
-// import startDeployToTargetOrg     from '@salesforce/apex/DeploymentToolCtrl.startDeployToTargetOrg';
-// import checkDeployStatus          from '@salesforce/apex/DeploymentToolCtrl.checkDeployStatus';
-import getUserStoryName from '@salesforce/apex/DeploymentToolCtrl.getUserStoryName';
-
-
+import getUserStoryName               from '@salesforce/apex/DeploymentToolCtrl.getUserStoryName';
 import saveCommitAndComponentRecords  from '@salesforce/apex/DeploymentToolCtrl.saveCommitAndComponentRecords';
+
+// ✅ NEW IMPORTS — Branch modal ke liye
+import getExistingBranchForUserStory      from '@salesforce/apex/DeploymentToolCtrl.getExistingBranchForUserStory';
+import deleteFeatureBranchAndClosePR      from '@salesforce/apex/DeploymentToolCtrl.deleteFeatureBranchAndClosePR';
 
 const RETRIEVE_BATCH_SIZE  = 10;
 const MAX_POLL_ATTEMPTS    = 80;
@@ -35,6 +34,7 @@ const SKIP_COMPONENTS = [
     'OAuthCallbackCtrl',
     'OAuthCallback'
 ];
+
 export default class DeploymentTool extends LightningElement {
 
     // ── Tab ─────────────────────────────────────────────────
@@ -77,6 +77,14 @@ export default class DeploymentTool extends LightningElement {
     @track isPrevCommitLoading = false;
     @track prevCommitError     = '';
     @track prevCommits         = [];
+
+    // ══════════════════════════════════════════════════════════
+    // ✅ NEW — Commit Modal State
+    // ══════════════════════════════════════════════════════════
+    @track showCommitModal      = false;   // modal visible/hidden
+    @track createNewBranch      = false;   // toggle: naya branch banana hai ya nahi
+    @track existingBranchName   = null;    // Salesforce se aaya purana branch name
+    @track isModalLoading       = false;   // modal ke andar loading spinner
 
     jsZipLoaded = false;
 
@@ -135,6 +143,11 @@ export default class DeploymentTool extends LightningElement {
         this.sourceInstanceUrl   = null;
         this.targetAccessToken   = null;
         this.targetInstanceUrl   = null;
+        // Modal reset
+        this.showCommitModal     = false;
+        this.createNewBranch     = false;
+        this.existingBranchName  = null;
+        this.isModalLoading      = false;
     }
 
     // ══════════════════════════════════════════════════════════
@@ -212,6 +225,40 @@ export default class DeploymentTool extends LightningElement {
     get selectedChangesTabClass()   { return this.activeTab === 'selectedChanges' ? 'slds-tabs_default__item slds-is-active' : 'slds-tabs_default__item'; }
     get findChangesPanelClass()     { return this.activeTab === 'findChanges'     ? 'slds-tabs_default__content slds-show' : 'slds-tabs_default__content slds-hide'; }
     get selectedChangesPanelClass() { return this.activeTab === 'selectedChanges' ? 'slds-tabs_default__content slds-show' : 'slds-tabs_default__content slds-hide'; }
+
+    // ══════════════════════════════════════════════════════════
+    // ✅ NEW — COMMIT MODAL GETTERS
+    // ══════════════════════════════════════════════════════════
+
+    // Existing branch hai ya nahi
+    get hasExistingBranch() {
+        return !!this.existingBranchName;
+    }
+
+    // Modal mein existing branch info message
+    get existingBranchInfo() {
+        if (this.existingBranchName) {
+            return `Existing branch: ${this.existingBranchName}`;
+        }
+        return 'No existing branch found. A new branch will be created automatically.';
+    }
+
+    // Toggle ka label
+    get newBranchToggleLabel() {
+        return this.createNewBranch
+            ? '🔄 New Branch will be created (existing branch & open PRs will be closed)'
+            : '➕ Commit to existing branch';
+    }
+
+    // Warning message jab new branch ON ho
+    get showNewBranchWarning() {
+        return this.createNewBranch && this.hasExistingBranch;
+    }
+
+    // Modal confirm button disable condition
+    get isModalConfirmDisabled() {
+        return this.isModalLoading;
+    }
 
     // ══════════════════════════════════════════════════════════
     // FILTER GETTERS
@@ -510,7 +557,8 @@ export default class DeploymentTool extends LightningElement {
     }
 
     // ══════════════════════════════════════════════════════════
-    // MAIN DEPLOY FLOW
+    // ✅ NEW — STEP 1: Deploy button click → Open Modal
+    // Pehle existing branch check karo, phir modal dikhao
     // ══════════════════════════════════════════════════════════
     async deploySelected() {
         if (!this.selectedComponents.length) {
@@ -526,8 +574,50 @@ export default class DeploymentTool extends LightningElement {
             return;
         }
 
-        this.isLoading    = true;
-        this.showProgress = true;
+        // Modal open karo aur existing branch fetch karo
+        this.isModalLoading     = true;
+        this.showCommitModal    = true;
+        this.createNewBranch    = false;
+        this.existingBranchName = null;
+
+        try {
+            const existingBranch = await getExistingBranchForUserStory({
+                userStoryId: this.userStoryId
+            });
+            this.existingBranchName = existingBranch || null;
+        } catch (e) {
+            // Error aaye toh bhi modal chalu rakhna hai
+            console.error('Could not fetch existing branch:', e);
+            this.existingBranchName = null;
+        } finally {
+            this.isModalLoading = false;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // ✅ NEW — Toggle handler: "Create New Branch" switch
+    // ══════════════════════════════════════════════════════════
+    handleNewBranchToggle(event) {
+        this.createNewBranch = event.detail.checked;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // ✅ NEW — Modal Cancel
+    // ══════════════════════════════════════════════════════════
+    handleModalCancel() {
+        this.showCommitModal    = false;
+        this.createNewBranch    = false;
+        this.existingBranchName = null;
+        this.isModalLoading     = false;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // ✅ NEW — Modal Confirm → Actual Deploy Flow
+    // ══════════════════════════════════════════════════════════
+    async handleModalConfirm() {
+        this.showCommitModal = false;
+        this.isLoading       = true;
+        this.showProgress    = true;
 
         try {
             // ── Step 0: Dependencies check ────────────────────────────
@@ -590,38 +680,55 @@ export default class DeploymentTool extends LightningElement {
                 return f;
             });
 
-            // ── Step 2: Push to GitHub ────────────────────────────────
-            this.updateProgress('Step 2/3 — Pushing to GitHub...', 35);
-            const branchName     = await this.setupGitBranch();
+            // ── Step 2: Branch setup — New branch ya existing? ────────
+            this.updateProgress('Step 2/3 — Setting up GitHub branch...', 35);
+            let branchName;
+
+            if (this.createNewBranch && this.existingBranchName) {
+                // ✅ Purana branch delete karo, open PRs close karo
+                this.updateProgress('Deleting existing branch & closing open PRs...', 38);
+                await deleteFeatureBranchAndClosePR({
+                    branchName  : this.existingBranchName,
+                    userStoryId : this.userStoryId
+                });
+                // Ab naya branch banao
+                this.updateProgress('Creating new branch...', 42);
+                branchName = await this.setupGitBranch();
+            } else if (!this.existingBranchName) {
+                // Pehli baar deploy ho raha hai — naya branch
+                branchName = await this.setupGitBranch();
+            } else {
+                // Existing branch pe hi commit karo
+                branchName = this.existingBranchName;
+            }
+
+            // ── Step 3: Push to GitHub ────────────────────────────────
+            this.updateProgress('Step 2/3 — Pushing to GitHub...', 50);
             const packageXml     = this.buildOrderedPackageXml();
             const allFilesToPush = [
                 { path: 'package.xml', content: btoa(unescape(encodeURIComponent(packageXml))) },
                 ...allFiles.filter(f => f.path !== 'package.xml')
             ];
 
-        
             const commitSha = await this.pushAllFilesWithRetry(allFilesToPush, branchName);
 
-           
+            // ── Step 4: Save Salesforce records ───────────────────────
             this.updateProgress('Step 3/3 — Saving commit records in Salesforce...', 80);
 
-           
             const componentData = this.selectedComponents.map(c => ({
                 name        : c.name,
                 metadataType: c.metadataType
             }));
 
-        
             const uniqueTypes = [...new Set(this.selectedComponents.map(c => c.metadataType))].join(', ');
             const commitMsg   = `Deploy: ${uniqueTypes} — ${this.selectedComponents.length} components`;
 
             await saveCommitAndComponentRecords({
-                commitSha   : commitSha,
+                commitSha    : commitSha,
                 commitMessage: commitMsg,
                 branchName   : branchName,
-                userStoryId : this.userStoryId,
-                components  : componentData
-
+                userStoryId  : this.userStoryId,
+                components   : componentData
             });
 
             // ── Final Status ──────────────────────────────────────────
@@ -634,7 +741,6 @@ export default class DeploymentTool extends LightningElement {
                 true
             );
 
-            
             if (this.showPrevCommitPanel) {
                 this.prevCommits     = [];
                 this.prevCommitError = '';
@@ -645,68 +751,11 @@ export default class DeploymentTool extends LightningElement {
             this.setStatus('Error: ' + this.getError(e), false);
             this.showProgress = false;
         } finally {
-            this.isLoading = false;
+            this.isLoading          = false;
+            this.createNewBranch    = false;
+            this.existingBranchName = null;
         }
     }
-
-    // ══════════════════════════════════════════════════════════
-    // BUILD DEPLOY ZIP
-    // ⛔ TEMPORARILY DISABLED — 
-    // ══════════════════════════════════════════════════════════
-    /*
-    async buildDeployZip(files, packageXml) {
-        const zip = new JSZip();
-        zip.file('package.xml', packageXml);
-        for (const f of files) {
-            if (f.path === 'package.xml') continue;
-            const binary = atob(f.content);
-            const bytes  = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            zip.file(f.path, bytes);
-        }
-        const zipBase64 = await zip.generateAsync({
-            type        : 'base64',
-            compression : 'DEFLATE'
-        });
-        return zipBase64;
-    }
-    */
-
-    // ══════════════════════════════════════════════════════════
-    // POLL DEPLOY STATUS
-    // ⛔ TEMPORARILY DISABLED — 
-    // ══════════════════════════════════════════════════════════
-    /*
-    async pollDeployStatus(jobId) {
-        for (let i = 0; i < DEPLOY_MAX_ATTEMPTS; i++) {
-            await this.sleep(DEPLOY_POLL_INTERVAL);
-            const result = await checkDeployStatus({
-                jobId,
-                accessToken : this.targetAccessToken,
-                instanceUrl : this.targetInstanceUrl
-            });
-            const deployed = result.numberComponentsDeployed || 0;
-            const total    = result.numberComponentsTotal    || 0;
-            const pct      = total > 0
-                ? Math.min(78 + Math.round((deployed / total) * 21), 99)
-                : 78 + Math.min(i, 20);
-            this.updateProgress(
-                `Deploying to ${this.targetOrgName}... ${deployed}/${total} components (${result.status})`,
-                pct
-            );
-            if (result.done) {
-                return {
-                    success     : result.status === 'Succeeded',
-                    errorMessage: result.errorMessage || ''
-                };
-            }
-        }
-        return {
-            success     : false,
-            errorMessage: `Deploy timed out after ${Math.round((DEPLOY_MAX_ATTEMPTS * DEPLOY_POLL_INTERVAL) / 60000)} minutes.`
-        };
-    }
-    */
 
     // ══════════════════════════════════════════════════════════
     // BUILD ORDERED PACKAGE XML
@@ -860,31 +909,29 @@ export default class DeploymentTool extends LightningElement {
     // GIT BRANCH SETUP
     // ══════════════════════════════════════════════════════════
     async setupGitBranch() {
-    const sha        = await getMainBranchSha({ userStoryId: this.userStoryId });
-    const usName     = await getUserStoryName({ userStoryId: this.userStoryId });
-    const safeName   = (usName || 'US').replace(/[^a-zA-Z0-9-]/g, '-');
-    const branchName = `feature/${safeName}`;
-    await createFeatureBranch({ branchName, sha, userStoryId: this.userStoryId });
-    return branchName;
-}
+        const sha        = await getMainBranchSha({ userStoryId: this.userStoryId });
+        const usName     = await getUserStoryName({ userStoryId: this.userStoryId });
+        const safeName   = (usName || 'US').replace(/[^a-zA-Z0-9-]/g, '-');
+        const branchName = `feature/${safeName}`;
+        await createFeatureBranch({ branchName, sha, userStoryId: this.userStoryId });
+        return branchName;
+    }
 
     // ══════════════════════════════════════════════════════════
-    // PUSH FILES
-    // ✅ CHANGED: Now it returns the commit SHA.
+    // PUSH FILES — Returns commit SHA
     // ══════════════════════════════════════════════════════════
     async pushAllFilesWithRetry(files, branchName) {
         const uniqueTypes = [...new Set(this.selectedComponents.map(c => c.metadataType))].join(', ');
         const commitMsg   = `Deploy: ${uniqueTypes} — ${this.selectedComponents.length} components`;
         this.updateProgress(`Pushing all ${files.length} files to GitHub...`, 50);
         try {
-            
             const commitSha = await pushMultipleFilesToGitHub({
                 branchName,
                 commitMessage : commitMsg,
                 files         : files.map(f => ({ filePath: f.path, base64Content: f.content })),
                 userStoryId   : this.userStoryId
             });
-            return commitSha; 
+            return commitSha;
         } catch (error) {
             throw new Error('Bulk push failed: ' + this.getError(error));
         }
