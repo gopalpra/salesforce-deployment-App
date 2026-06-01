@@ -649,13 +649,14 @@ public without sharing class DeploymentToolCtrl {
     public static String getExistingBranchForUserStory(String userStoryId) {
         try {
             List<Commit__c> commits = [
-                SELECT Branch_Name__c
-                FROM Commit__c
-                WHERE User_Story_Name__c = :userStoryId
-                AND Branch_Name__c != null
-                ORDER BY CreatedDate DESC
-                LIMIT 1
-            ];
+    SELECT Branch_Name__c
+    FROM Commit__c
+    WHERE User_Story_Name__c = :userStoryId
+    AND Branch_Name__c != null
+    AND Status__c != 'Obsolete'
+    ORDER BY CreatedDate DESC
+    LIMIT 1
+];
             if (commits.isEmpty()) return null;
             return commits[0].Branch_Name__c;
         } catch (Exception e) {
@@ -668,66 +669,80 @@ public without sharing class DeploymentToolCtrl {
     // Called when user chooses "Create New Branch" in modal
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-    public static Map<String, Object> deleteFeatureBranchAndClosePR(String branchName, String userStoryId) {
-        try {
-            GitHub_Connection__c conn  = getConnectionFromUserStory(userStoryId);
-            String               owner = conn.Repo_Owner__c;
-            String               repo  = conn.Repo_Name__c;
-            String               token = conn.Access_Token__c;
+public static Map<String, Object> deleteFeatureBranchAndClosePR(String branchName, String userStoryId) {
+    try {
+        GitHub_Connection__c conn  = getConnectionFromUserStory(userStoryId);
+        String               owner = conn.Repo_Owner__c;
+        String               repo  = conn.Repo_Name__c;
+        String               token = conn.Access_Token__c;
 
-            Integer closedPrCount  = 0;
-            Boolean branchDeleted  = false;
+        Integer closedPrCount  = 0;
+        Boolean branchDeleted  = false;
 
-            // ── Step 1: Find & close any open PRs for this branch ───────
-            String encodedHead = EncodingUtil.urlEncode(owner + ':' + branchName, 'UTF-8');
-            HttpResponse prRes = githubGet(token,
-                repoPath(owner, repo, '/pulls?state=open&head=' + encodedHead + '&per_page=10'));
-            checkGitHubRateLimit(prRes, 'deleteFeatureBranchAndClosePR - list PRs');
+        // ── Step 1: Find & close any open PRs for this branch ───────
+        String encodedHead = EncodingUtil.urlEncode(owner + ':' + branchName, 'UTF-8');
+        HttpResponse prRes = githubGet(token,
+            repoPath(owner, repo, '/pulls?state=open&head=' + encodedHead + '&per_page=10'));
+        checkGitHubRateLimit(prRes, 'deleteFeatureBranchAndClosePR - list PRs');
 
-            if (prRes.getStatusCode() == 200) {
-                List<Object> prs = (List<Object>) JSON.deserializeUntyped(prRes.getBody());
-                for (Object prObj : prs) {
-                    Map<String, Object> pr     = (Map<String, Object>) prObj;
-                    Integer             prNum  = (Integer) pr.get('number');
-                    HttpResponse        closeRes = githubPost(token, 'PATCH',
-                        repoPath(owner, repo, '/pulls/' + prNum),
-                        new Map<String, String>{ 'state' => 'closed' });
-                    checkGitHubRateLimit(closeRes, 'deleteFeatureBranchAndClosePR - close PR #' + prNum);
-                    if (closeRes.getStatusCode() == 200) closedPrCount++;
-                }
+        if (prRes.getStatusCode() == 200) {
+            List<Object> prs = (List<Object>) JSON.deserializeUntyped(prRes.getBody());
+            for (Object prObj : prs) {
+                Map<String, Object> pr    = (Map<String, Object>) prObj;
+                Integer             prNum = (Integer) pr.get('number');
+                HttpResponse closeRes = githubPost(token, 'PATCH',
+                    repoPath(owner, repo, '/pulls/' + prNum),
+                    new Map<String, String>{ 'state' => 'closed' });
+                checkGitHubRateLimit(closeRes, 'deleteFeatureBranchAndClosePR - close PR #' + prNum);
+                if (closeRes.getStatusCode() == 200) closedPrCount++;
             }
-
-            // ── Step 2: Delete the branch ────────────────────────────────
-            HttpRequest delReq = new HttpRequest();
-            delReq.setEndpoint(GITHUB_API_BASE + repoPath(owner, repo, '/git/refs/heads/' + branchName));
-            delReq.setMethod('DELETE');
-            delReq.setHeader('Authorization', 'Bearer ' + token);
-            delReq.setHeader('Accept', 'application/vnd.github+json');
-            delReq.setHeader('X-GitHub-Api-Version', '2022-11-28');
-            delReq.setTimeout(TIMEOUT_MS);
-            HttpResponse delRes = new Http().send(delReq);
-            checkGitHubRateLimit(delRes, 'deleteFeatureBranchAndClosePR - delete branch');
-
-            // 204 = deleted, 422 = branch didn't exist (both are fine)
-            branchDeleted = (delRes.getStatusCode() == 204 || delRes.getStatusCode() == 422);
-            if (!branchDeleted && delRes.getStatusCode() != 404) {
-                throw createAuraException(
-                    'Branch deletion failed (' + delRes.getStatusCode() + '): ' + delRes.getBody()
-                );
-            }
-
-            return new Map<String, Object>{
-                'branchDeleted' => branchDeleted,
-                'closedPrCount' => closedPrCount
-            };
-
-        } catch (AuraHandledException e) {
-            throw e;
-        } catch (Exception e) {
-            throw createAuraException('deleteFeatureBranchAndClosePR: ' + e.getMessage());
         }
-    }
 
+        // ── Step 2: Delete the branch ────────────────────────────────
+        HttpRequest delReq = new HttpRequest();
+        delReq.setEndpoint(GITHUB_API_BASE + repoPath(owner, repo, '/git/refs/heads/' + branchName));
+        delReq.setMethod('DELETE');
+        delReq.setHeader('Authorization', 'Bearer ' + token);
+        delReq.setHeader('Accept', 'application/vnd.github+json');
+        delReq.setHeader('X-GitHub-Api-Version', '2022-11-28');
+        delReq.setTimeout(TIMEOUT_MS);
+        HttpResponse delRes = new Http().send(delReq);
+        checkGitHubRateLimit(delRes, 'deleteFeatureBranchAndClosePR - delete branch');
+
+        // 204 = deleted, 422 = branch didn't exist (both are fine)
+        branchDeleted = (delRes.getStatusCode() == 204 || delRes.getStatusCode() == 422);
+        if (!branchDeleted && delRes.getStatusCode() != 404) {
+            throw createAuraException(
+                'Branch deletion failed (' + delRes.getStatusCode() + '): ' + delRes.getBody()
+            );
+        }
+
+        // ── Step 3: ✅ Mark old Commit__c records as obsolete───
+        List<Commit__c> existingCommits = [
+            SELECT Id, Status__c
+            FROM Commit__c
+            WHERE User_Story_Name__c = :userStoryId
+            AND Status__c != 'Obsolete'
+        ];
+        if (!existingCommits.isEmpty()) {
+            for (Commit__c c : existingCommits) {
+                c.Status__c = 'Obsolete';
+            }
+            update existingCommits;
+        }
+
+        return new Map<String, Object>{
+            'branchDeleted'   => branchDeleted,
+            'closedPrCount'   => closedPrCount,
+            'obsoleteCommits' => existingCommits.size()
+        };
+
+    } catch (AuraHandledException e) {
+        throw e;
+    } catch (Exception e) {
+        throw createAuraException('deleteFeatureBranchAndClosePR: ' + e.getMessage());
+    }
+}
     // ═══════════════════════════════════════════════════════════
     // GitHub: Push Multiple Files
     // ═══════════════════════════════════════════════════════════
@@ -798,76 +813,77 @@ public without sharing class DeploymentToolCtrl {
     // ✅ UPDATED — Save Commit + Component Records (branchName added)
     // ═══════════════════════════════════════════════════════════
     @AuraEnabled
-    public static String saveCommitAndComponentRecords(
-            String commitSha,
-            String commitMessage,
-            String branchName,
-            String userStoryId,
-            List<Map<String, String>> components) {
-        try {
-            if (String.isBlank(commitSha))    throw createAuraException('Commit SHA is blank');
-            if (String.isBlank(userStoryId))  throw createAuraException('User Story ID is blank');
-            if (components == null || components.isEmpty()) throw createAuraException('Components list is empty');
+public static String saveCommitAndComponentRecords(
+        String commitSha,
+        String commitMessage,
+        String branchName,
+        String userStoryId,
+        List<Map<String, String>> components) {
+    try {
+        if (String.isBlank(commitSha))   throw createAuraException('Commit SHA is blank');
+        if (String.isBlank(userStoryId)) throw createAuraException('User Story ID is blank');
+        if (components == null || components.isEmpty()) throw createAuraException('Components list is empty');
 
-            Commit__c commitRec = new Commit__c(
-                Commit_ID__c       = commitSha,
-                Commit_Message__c  = commitMessage,
-                Branch_Name__c     = branchName,
-                User_Story_Name__c = userStoryId
-            );
-            insert commitRec;
+        // ✅ Status = Set the new commit as Active
+        Commit__c commitRec = new Commit__c(
+            Commit_ID__c       = commitSha,
+            Commit_Message__c  = commitMessage,
+            Branch_Name__c     = branchName,
+            User_Story_Name__c = userStoryId,
+            Status__c          = 'Active'
+        );
+        insert commitRec;
 
-            List<String> componentNames = new List<String>();
-            for (Map<String, String> comp : components) {
-                componentNames.add(comp.get('name'));
-            }
-
-            List<Component__c> existingComponents = [
-                SELECT Id, Component_Name__c, Commit_ID__c, Metadata_Type__c
-                FROM Component__c
-                WHERE User_Story_Name__c = :userStoryId
-                AND Component_Name__c IN :componentNames
-            ];
-
-            Map<String, Component__c> existingMap = new Map<String, Component__c>();
-            for (Component__c ec : existingComponents) {
-                existingMap.put(ec.Component_Name__c, ec);
-            }
-
-            List<Component__c> toInsert = new List<Component__c>();
-            List<Component__c> toUpdate = new List<Component__c>();
-
-            for (Map<String, String> comp : components) {
-                String compName = comp.get('name');
-                String compType = comp.containsKey('metadataType') ? comp.get('metadataType') : '';
-
-                if (existingMap.containsKey(compName)) {
-                    Component__c existing = existingMap.get(compName);
-                    existing.Commit_ID__c     = commitSha;
-                    existing.Metadata_Type__c = compType;
-                    toUpdate.add(existing);
-                } else {
-                    toInsert.add(new Component__c(
-                        Component_Name__c  = compName,
-                        Commit_ID__c       = commitSha,
-                        Metadata_Type__c   = compType,
-                        User_Story_Name__c = userStoryId
-                    ));
-                }
-            }
-
-            if (!toInsert.isEmpty()) insert toInsert;
-            if (!toUpdate.isEmpty()) update toUpdate;
-
-            return commitRec.Id;
-
-        } catch (AuraHandledException e) {
-            throw e;
-        } catch (Exception e) {
-            throw createAuraException('saveCommitAndComponentRecords: ' + e.getMessage());
+        List<String> componentNames = new List<String>();
+        for (Map<String, String> comp : components) {
+            componentNames.add(comp.get('name'));
         }
-    }
 
+        List<Component__c> existingComponents = [
+            SELECT Id, Component_Name__c, Commit_ID__c, Metadata_Type__c
+            FROM Component__c
+            WHERE User_Story_Name__c = :userStoryId
+            AND Component_Name__c IN :componentNames
+        ];
+
+        Map<String, Component__c> existingMap = new Map<String, Component__c>();
+        for (Component__c ec : existingComponents) {
+            existingMap.put(ec.Component_Name__c, ec);
+        }
+
+        List<Component__c> toInsert = new List<Component__c>();
+        List<Component__c> toUpdate = new List<Component__c>();
+
+        for (Map<String, String> comp : components) {
+            String compName = comp.get('name');
+            String compType = comp.containsKey('metadataType') ? comp.get('metadataType') : '';
+
+            if (existingMap.containsKey(compName)) {
+                Component__c existing = existingMap.get(compName);
+                existing.Commit_ID__c     = commitSha;
+                existing.Metadata_Type__c = compType;
+                toUpdate.add(existing);
+            } else {
+                toInsert.add(new Component__c(
+                    Component_Name__c  = compName,
+                    Commit_ID__c       = commitSha,
+                    Metadata_Type__c   = compType,
+                    User_Story_Name__c = userStoryId
+                ));
+            }
+        }
+
+        if (!toInsert.isEmpty()) insert toInsert;
+        if (!toUpdate.isEmpty()) update toUpdate;
+
+        return commitRec.Id;
+
+    } catch (AuraHandledException e) {
+        throw e;
+    } catch (Exception e) {
+        throw createAuraException('saveCommitAndComponentRecords: ' + e.getMessage());
+    }
+}
     // ═══════════════════════════════════════════════════════════
     // ✅ NEW — Create or View PR for User Story
     // ═══════════════════════════════════════════════════════════
@@ -879,6 +895,7 @@ public without sharing class DeploymentToolCtrl {
                 FROM Commit__c
                 WHERE User_Story_Name__c = :userStoryId
                 AND Branch_Name__c != null
+                AND Status__c != 'Obsolete' 
                 ORDER BY CreatedDate DESC
                 LIMIT 1
             ];
@@ -1093,7 +1110,7 @@ public without sharing class DeploymentToolCtrl {
                 Map<String, Object> fileMap  = (Map<String, Object>) f;
                 String              filePath = String.valueOf(fileMap.get('filename'));
                 if (filePath == null || filePath.endsWith('package.xml')) continue;
-                String componentName = extractComponentName(filePath);
+                String componentName = extractComponentName(filePath);    
                 if (String.isNotBlank(componentName))
                     files.add(new Map<String, Object>{
                         'path' => filePath, 'name' => componentName,
@@ -1136,7 +1153,7 @@ public without sharing class DeploymentToolCtrl {
                     Component_API_Name__c = comp.get('name'),
                     File_Path__c          = comp.get('filePath'),
                     Operation__c          = 'Deploy'
-                ));
+                ));      
             }
             insert comps;
             return log.Id;
@@ -1158,7 +1175,7 @@ public without sharing class DeploymentToolCtrl {
             HttpResponse         res         = githubGet(conn.Access_Token__c,
                 repoPath(conn.Repo_Owner__c, conn.Repo_Name__c,
                     '/actions/runs?branch=' + EncodingUtil.urlEncode(branchName, 'UTF-8') + '&per_page=1'));
-            checkGitHubRateLimit(res, 'syncDeploymentStatus');
+            checkGitHubRateLimit(res, 'syncDeploymentStatus');            
 
             if (res.getStatusCode() == 200) {
                 Map<String, Object> parsed = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
@@ -1194,7 +1211,7 @@ public without sharing class DeploymentToolCtrl {
         req.setHeader('Content-Type', 'application/json');
         req.setTimeout(TIMEOUT_MS);
         return new Http().send(req);
-    }
+    }   
 
     private static AuraHandledException createAuraException(String message) {
         AuraHandledException e = new AuraHandledException(message);

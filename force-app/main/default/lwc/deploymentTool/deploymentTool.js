@@ -20,7 +20,7 @@ import refreshAccessToken             from '@salesforce/apex/DeploymentToolCtrl.
 import getUserStoryName               from '@salesforce/apex/DeploymentToolCtrl.getUserStoryName';
 import saveCommitAndComponentRecords  from '@salesforce/apex/DeploymentToolCtrl.saveCommitAndComponentRecords';
 
-// ✅ NEW IMPORTS — Branch modal ke liye
+// ✅ NEW IMPORTS — For the branch modal
 import getExistingBranchForUserStory      from '@salesforce/apex/DeploymentToolCtrl.getExistingBranchForUserStory';
 import deleteFeatureBranchAndClosePR      from '@salesforce/apex/DeploymentToolCtrl.deleteFeatureBranchAndClosePR';
 
@@ -81,10 +81,10 @@ export default class DeploymentTool extends LightningElement {
     // ══════════════════════════════════════════════════════════
     // ✅ NEW — Commit Modal State
     // ══════════════════════════════════════════════════════════
-    @track showCommitModal      = false;   // modal visible/hidden
-    @track createNewBranch      = false;   // toggle: naya branch banana hai ya nahi
-    @track existingBranchName   = null;    // Salesforce se aaya purana branch name
-    @track isModalLoading       = false;   // modal ke andar loading spinner
+    @track showCommitModal      = false;   
+    @track createNewBranch      = false;   
+    @track existingBranchName   = null;    
+    @track isModalLoading       = false;   
 
     jsZipLoaded = false;
 
@@ -230,12 +230,12 @@ export default class DeploymentTool extends LightningElement {
     // ✅ NEW — COMMIT MODAL GETTERS
     // ══════════════════════════════════════════════════════════
 
-    // Existing branch hai ya nahi
+    // Whether an existing branch is available or not
     get hasExistingBranch() {
         return !!this.existingBranchName;
     }
 
-    // Modal mein existing branch info message
+    // Info message for the existing branch in the modal
     get existingBranchInfo() {
         if (this.existingBranchName) {
             return `Existing branch: ${this.existingBranchName}`;
@@ -243,14 +243,14 @@ export default class DeploymentTool extends LightningElement {
         return 'No existing branch found. A new branch will be created automatically.';
     }
 
-    // Toggle ka label
+    // Label for the toggle
     get newBranchToggleLabel() {
         return this.createNewBranch
             ? '🔄 New Branch will be created (existing branch & open PRs will be closed)'
             : '➕ Commit to existing branch';
     }
 
-    // Warning message jab new branch ON ho
+    // Warning message when the new branch toggle is ON
     get showNewBranchWarning() {
         return this.createNewBranch && this.hasExistingBranch;
     }
@@ -558,7 +558,7 @@ export default class DeploymentTool extends LightningElement {
 
     // ══════════════════════════════════════════════════════════
     // ✅ NEW — STEP 1: Deploy button click → Open Modal
-    // Pehle existing branch check karo, phir modal dikhao
+    // First check for the existing branch, then show the modal
     // ══════════════════════════════════════════════════════════
     async deploySelected() {
         if (!this.selectedComponents.length) {
@@ -574,7 +574,7 @@ export default class DeploymentTool extends LightningElement {
             return;
         }
 
-        // Modal open karo aur existing branch fetch karo
+        // Open the modal and fetch the existing branch
         this.isModalLoading     = true;
         this.showCommitModal    = true;
         this.createNewBranch    = false;
@@ -586,7 +586,7 @@ export default class DeploymentTool extends LightningElement {
             });
             this.existingBranchName = existingBranch || null;
         } catch (e) {
-            // Error aaye toh bhi modal chalu rakhna hai
+            //Keep the modal open even if an error occurs
             console.error('Could not fetch existing branch:', e);
             this.existingBranchName = null;
         } finally {
@@ -685,20 +685,20 @@ export default class DeploymentTool extends LightningElement {
             let branchName;
 
             if (this.createNewBranch && this.existingBranchName) {
-                // ✅ Purana branch delete karo, open PRs close karo
+                // ✅ Delete the old branch and close open PRs
                 this.updateProgress('Deleting existing branch & closing open PRs...', 38);
                 await deleteFeatureBranchAndClosePR({
                     branchName  : this.existingBranchName,
                     userStoryId : this.userStoryId
                 });
-                // Ab naya branch banao
+                // Now create a new branch
                 this.updateProgress('Creating new branch...', 42);
                 branchName = await this.setupGitBranch();
             } else if (!this.existingBranchName) {
-                // Pehli baar deploy ho raha hai — naya branch
+                // First-time deployment — create a new branch
                 branchName = await this.setupGitBranch();
             } else {
-                // Existing branch pe hi commit karo
+                // Commit directly to the existing branch
                 branchName = this.existingBranchName;
             }
 
