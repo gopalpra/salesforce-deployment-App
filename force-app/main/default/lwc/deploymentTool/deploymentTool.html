@@ -5,7 +5,7 @@
 
             <div class={mainContentClass}>
 
-                <!-- Org Banner (shows when userStoryId is available) -->
+                <!-- Org Banner -->
                 <template if:true={showOrgBanner}>
                     <div class={orgBannerClass} style="margin:8px 16px; border-radius:4px; padding:8px 16px;">
                         <lightning-icon icon-name="utility:info" size="x-small" class="slds-m-right_x-small"></lightning-icon>
@@ -171,12 +171,24 @@
 
                             <template if:true={hasComponents}>
                                 <div class="slds-m-top_medium slds-box">
+
+                                    <!-- Results Header Row -->
                                     <div class="slds-grid slds-grid_align-spread slds-m-bottom_small">
                                         <h3 class="slds-text-heading_small">
                                             Results &nbsp;
                                             <span class="slds-badge">{filteredComponents.length} item(s)</span>
                                         </h3>
-                                        <div>
+                                        <div class="slds-grid slds-grid_vertical-align-center" style="gap:8px;">
+                                            <!-- Page Size Selector -->
+                                            <div style="width:90px;">
+                                                <lightning-combobox
+                                                    label=""
+                                                    placeholder="Per page"
+                                                    value={currentPageSizeStr}
+                                                    options={pageSizeOptions}
+                                                    onchange={handlePageSizeChange}>
+                                                </lightning-combobox>
+                                            </div>
                                             <lightning-button-group>
                                                 <lightning-button label="Select All (Filtered)"
                                                     variant="neutral" onclick={selectAll}>
@@ -188,6 +200,7 @@
                                         </div>
                                     </div>
 
+                                    <!-- Column Headers -->
                                     <div class="slds-grid slds-text-title_caps slds-text-color_weak
                                                 slds-m-bottom_x-small slds-p-bottom_x-small"
                                          style="border-bottom:1px solid #dddbda; font-size:11px;">
@@ -201,7 +214,8 @@
                                         <div class="slds-col slds-size_1-of-12">Status</div>
                                     </div>
 
-                                    <template for:each={filteredComponents} for:item="comp">
+                                    <!-- Paginated Rows -->
+                                    <template for:each={paginatedComponents} for:item="comp">
                                         <div key={comp.id}
                                              class="slds-grid slds-grid_vertical-align-center slds-m-top_x-small"
                                              style="border-bottom:1px solid #f3f2f2; padding-bottom:4px;">
@@ -255,6 +269,71 @@
                                             <lightning-button label="Clear Filters" variant="neutral" onclick={clearFilters}></lightning-button>
                                         </div>
                                     </template>
+
+                                    <!-- ══════════════════════════
+                                         PAGINATION CONTROLS
+                                         ══════════════════════════ -->
+                                    <div class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center
+                                                slds-m-top_medium slds-p-top_small"
+                                         style="border-top:1px solid #dddbda;">
+
+                                        <!-- Left: summary -->
+                                        <p class="slds-text-body_small slds-text-color_weak">
+                                            {paginationSummaryText}
+                                        </p>
+
+                                        <!-- Center: page nav buttons -->
+                                        <div class="slds-grid slds-grid_vertical-align-center" style="gap:4px;">
+                                            <lightning-button-icon
+                                                icon-name="utility:first"
+                                                variant="border-filled"
+                                                size="small"
+                                                alternative-text="First Page"
+                                                title="First Page"
+                                                disabled={isPrevDisabled}
+                                                onclick={goToFirstPage}>
+                                            </lightning-button-icon>
+                                         <lightning-button-icon
+                                               icon-name="utility:chevronleft"
+                                               variant="border-filled"
+                                               size="small"
+                                               alternative-text="Previous Page"
+                                               title="Previous Page"
+                                               disabled={isPrevDisabled}
+                                               onclick={goToPrevPage}>
+                                         </lightning-button-icon>
+
+                                             <span class="slds-text-body_small" style="padding:0 8px; white-space:nowrap;">
+                                                  Page {currentPage} of {totalPages}
+                                            </span>
+
+                                         <lightning-button-icon
+                                            icon-name="utility:chevronright"
+                                            variant="border-filled"
+                                            size="small"
+                                            alternative-text="Next Page"
+                                            title="Next Page"
+                                            disabled={isNextDisabled}
+                                            onclick={goToNextPage}>
+                                        </lightning-button-icon>
+                                        <lightning-button-icon
+                                               icon-name="utility:last"
+                                               variant="border-filled"
+                                               size="small"
+                                               alternative-text="Last Page"
+                                               title="Last Page"
+                                               disabled={isNextDisabled}
+                                               onclick={goToLastPage}>
+                                        </lightning-button-icon>
+                                        </div>
+
+                                        <!-- Right: selected count -->
+                                        <p class="slds-text-body_small slds-text-color_weak">
+                                            {selectedComponents.length} selected total
+                                        </p>
+
+                                    </div>
+                                    <!-- ══ END PAGINATION CONTROLS ══ -->
 
                                 </div>
 
@@ -448,14 +527,13 @@
         </template>
 
         <!-- ══════════════════════════════════════════════════════
-             ✅ COMMIT MODAL — Opens when the Deploy button is clicked
+             COMMIT MODAL
              ══════════════════════════════════════════════════════ -->
         <template if:true={showCommitModal}>
             <section role="dialog" tabindex="-1" aria-modal="true"
                      class="slds-modal slds-fade-in-open">
                 <div class="slds-modal__container">
 
-                    <!-- Modal Header -->
                     <header class="slds-modal__header">
                         <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse"
                                 title="Close" onclick={handleModalCancel}>
@@ -468,10 +546,8 @@
                         </h2>
                     </header>
 
-                    <!-- Modal Body -->
                     <div class="slds-modal__content slds-p-around_medium">
 
-                        <!-- Spinner: Until the existing branch is fetched-->
                         <template if:true={isModalLoading}>
                             <div class="slds-align_absolute-center slds-p-around_large"
                                  style="min-height:120px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
@@ -483,10 +559,8 @@
                             </div>
                         </template>
 
-                        <!-- Body content:After the loading is complete -->
                         <template if:false={isModalLoading}>
 
-                            <!-- Components count summary -->
                             <div class="slds-box slds-theme_shade slds-m-bottom_medium"
                                  style="border-radius:4px;">
                                 <p class="slds-text-body_regular">
@@ -497,7 +571,6 @@
                                 </p>
                             </div>
 
-                            <!-- Existing Branch info row -->
                             <div class="slds-m-bottom_medium"
                                  style="padding:8px 12px; background:#f3f2f2; border-radius:4px; border-left:3px solid #0070d2;">
                                 <p class="slds-text-body_small" style="color:#3e3e3c;">
@@ -508,7 +581,6 @@
                                 </p>
                             </div>
 
-                            <!-- Toggle — Show only when an existing branch is available-->
                             <template if:true={hasExistingBranch}>
                                 <div class="slds-m-bottom_medium">
                                     <lightning-input
@@ -521,7 +593,6 @@
                                     </lightning-input>
                                 </div>
 
-                                <!-- ⚠️ Warning box: Only when the toggle is ON -->
                                 <template if:true={showNewBranchWarning}>
                                     <div style="background:#fff3cd; border:1px solid #f0ad4e;
                                                 border-radius:4px; padding:10px 14px;
@@ -544,7 +615,6 @@
                                 </template>
                             </template>
 
-                            <!-- Pehli baar: no existing branch info -->
                             <template if:false={hasExistingBranch}>
                                 <div style="background:#eaf5ea; border:1px solid #2e844a;
                                             border-radius:4px; padding:10px 14px; margin-bottom:12px;
@@ -563,7 +633,6 @@
                         </template>
                     </div>
 
-                    <!-- Modal Footer -->
                     <footer class="slds-modal__footer">
                         <lightning-button
                             label="Cancel"
@@ -594,7 +663,6 @@
                 </div>
             </section>
 
-            <!-- Modal backdrop -->
             <div class="slds-backdrop slds-backdrop_open"></div>
         </template>
         <!-- ══ END COMMIT MODAL ══ -->

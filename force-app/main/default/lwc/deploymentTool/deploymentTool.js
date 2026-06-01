@@ -20,9 +20,8 @@ import refreshAccessToken             from '@salesforce/apex/DeploymentToolCtrl.
 import getUserStoryName               from '@salesforce/apex/DeploymentToolCtrl.getUserStoryName';
 import saveCommitAndComponentRecords  from '@salesforce/apex/DeploymentToolCtrl.saveCommitAndComponentRecords';
 
-// ✅ NEW IMPORTS — For the branch modal
-import getExistingBranchForUserStory      from '@salesforce/apex/DeploymentToolCtrl.getExistingBranchForUserStory';
-import deleteFeatureBranchAndClosePR      from '@salesforce/apex/DeploymentToolCtrl.deleteFeatureBranchAndClosePR';
+import getExistingBranchForUserStory  from '@salesforce/apex/DeploymentToolCtrl.getExistingBranchForUserStory';
+import deleteFeatureBranchAndClosePR  from '@salesforce/apex/DeploymentToolCtrl.deleteFeatureBranchAndClosePR';
 
 const RETRIEVE_BATCH_SIZE  = 10;
 const MAX_POLL_ATTEMPTS    = 80;
@@ -72,19 +71,21 @@ export default class DeploymentTool extends LightningElement {
     @track filterModifiedAfter = '';
     @track filterCreatedAfter  = '';
 
+    // ── Pagination state ──────────────────────────────────────
+    @track currentPage = 1;
+    @track pageSize    = 25;
+
     // ── Prev Committed panel ──────────────────────────────────
     @track showPrevCommitPanel = false;
     @track isPrevCommitLoading = false;
     @track prevCommitError     = '';
     @track prevCommits         = [];
 
-    // ══════════════════════════════════════════════════════════
-    // ✅ NEW — Commit Modal State
-    // ══════════════════════════════════════════════════════════
-    @track showCommitModal      = false;   
-    @track createNewBranch      = false;   
-    @track existingBranchName   = null;    
-    @track isModalLoading       = false;   
+    // ── Commit Modal State ────────────────────────────────────
+    @track showCommitModal      = false;
+    @track createNewBranch      = false;
+    @track existingBranchName   = null;
+    @track isModalLoading       = false;
 
     jsZipLoaded = false;
 
@@ -148,6 +149,9 @@ export default class DeploymentTool extends LightningElement {
         this.createNewBranch     = false;
         this.existingBranchName  = null;
         this.isModalLoading      = false;
+        // Pagination reset
+        this.currentPage         = 1;
+        this.pageSize            = 25;
     }
 
     // ══════════════════════════════════════════════════════════
@@ -227,15 +231,12 @@ export default class DeploymentTool extends LightningElement {
     get selectedChangesPanelClass() { return this.activeTab === 'selectedChanges' ? 'slds-tabs_default__content slds-show' : 'slds-tabs_default__content slds-hide'; }
 
     // ══════════════════════════════════════════════════════════
-    // ✅ NEW — COMMIT MODAL GETTERS
+    // COMMIT MODAL GETTERS
     // ══════════════════════════════════════════════════════════
-
-    // Whether an existing branch is available or not
     get hasExistingBranch() {
         return !!this.existingBranchName;
     }
 
-    // Info message for the existing branch in the modal
     get existingBranchInfo() {
         if (this.existingBranchName) {
             return `Existing branch: ${this.existingBranchName}`;
@@ -243,19 +244,16 @@ export default class DeploymentTool extends LightningElement {
         return 'No existing branch found. A new branch will be created automatically.';
     }
 
-    // Label for the toggle
     get newBranchToggleLabel() {
         return this.createNewBranch
             ? '🔄 New Branch will be created (existing branch & open PRs will be closed)'
             : '➕ Commit to existing branch';
     }
 
-    // Warning message when the new branch toggle is ON
     get showNewBranchWarning() {
         return this.createNewBranch && this.hasExistingBranch;
     }
 
-    // Modal confirm button disable condition
     get isModalConfirmDisabled() {
         return this.isModalLoading;
     }
@@ -273,6 +271,53 @@ export default class DeploymentTool extends LightningElement {
         if (this.filterCreatedAfter?.trim())  { const cutoff = this.filterCreatedAfter.trim();           list = list.filter(c => c.createdDate && c.createdDate >= cutoff); }
         return list;
     }
+
+    // ══════════════════════════════════════════════════════════
+    // PAGINATION GETTERS
+    // ══════════════════════════════════════════════════════════
+    get paginatedComponents() {
+        const start = (this.currentPage - 1) * this.pageSize;
+        return this.filteredComponents.slice(start, start + this.pageSize);
+    }
+
+    get totalPages() {
+        return Math.max(1, Math.ceil(this.filteredComponents.length / this.pageSize));
+    }
+
+    get pageStartIndex() {
+        if (this.filteredComponents.length === 0) return 0;
+        return (this.currentPage - 1) * this.pageSize + 1;
+    }
+
+    get pageEndIndex() {
+        return Math.min(this.currentPage * this.pageSize, this.filteredComponents.length);
+    }
+
+    get hasPrevPage() { return this.currentPage > 1; }
+    get hasNextPage() { return this.currentPage < this.totalPages; }
+    get isPrevDisabled() { return !this.hasPrevPage; }
+get isNextDisabled() { return !this.hasNextPage; }
+    get pageSizeOptions() {
+        return [
+            { label: '10',  value: '10'  },
+            { label: '25',  value: '25'  },
+            { label: '50',  value: '50'  },
+            { label: '100', value: '100' }
+        ];
+    }
+
+    get currentPageSizeStr() {
+        return String(this.pageSize);
+    }
+
+    get paginationSummaryText() {
+        if (this.filteredComponents.length === 0) return 'No results';
+        return `Showing ${this.pageStartIndex}–${this.pageEndIndex} of ${this.filteredComponents.length} components`;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // OTHER GETTERS
+    // ══════════════════════════════════════════════════════════
     get hasActiveFilters()         { return !!(this.filterName?.trim() || this.filterLabel?.trim() || this.filterCreatedBy?.trim() || this.filterModifiedBy?.trim() || this.filterModifiedAfter?.trim() || this.filterCreatedAfter?.trim()); }
     get noFilteredResults()        { return this.hasComponents && this.filteredComponents.length === 0; }
     get filterSummaryText()        { if (!this.hasComponents) return 'Fetch components to see results'; return `Showing ${this.filteredComponents.length} of ${this.components.length} components`; }
@@ -312,12 +357,27 @@ export default class DeploymentTool extends LightningElement {
         if (filterType === 'modifiedBy')    this.filterModifiedBy    = value;
         if (filterType === 'modifiedAfter') this.filterModifiedAfter = value;
         if (filterType === 'createdAfter')  this.filterCreatedAfter  = value;
+        this.currentPage = 1;
     }
 
     clearFilters() {
         this.filterName = ''; this.filterLabel = ''; this.filterCreatedBy = '';
         this.filterModifiedBy = ''; this.filterModifiedAfter = ''; this.filterCreatedAfter = '';
+        this.currentPage = 1;
     }
+
+    // ══════════════════════════════════════════════════════════
+    // PAGINATION HANDLERS
+    // ══════════════════════════════════════════════════════════
+    handlePageSizeChange(event) {
+        this.pageSize    = parseInt(event.detail.value, 10);
+        this.currentPage = 1;
+    }
+
+    goToFirstPage() { this.currentPage = 1; }
+    goToPrevPage()  { if (this.hasPrevPage) this.currentPage--; }
+    goToNextPage()  { if (this.hasNextPage) this.currentPage++; }
+    goToLastPage()  { this.currentPage = this.totalPages; }
 
     // ══════════════════════════════════════════════════════════
     // PREV COMMITTED PANEL
@@ -417,6 +477,7 @@ export default class DeploymentTool extends LightningElement {
         this.hasComponents = false;
         this.statusMessage = '';
         this.showProgress  = false;
+        this.currentPage   = 1;
         this.clearFilters();
     }
 
@@ -435,6 +496,7 @@ export default class DeploymentTool extends LightningElement {
         this.isLoading     = true;
         this.statusMessage = '';
         this.showProgress  = false;
+        this.currentPage   = 1;
         try {
             const raw = await getComponentsDynamic({
                 metadataType : this.selectedType,
@@ -557,8 +619,7 @@ export default class DeploymentTool extends LightningElement {
     }
 
     // ══════════════════════════════════════════════════════════
-    // ✅ NEW — STEP 1: Deploy button click → Open Modal
-    // First check for the existing branch, then show the modal
+    // STEP 1: Deploy button click → Open Modal
     // ══════════════════════════════════════════════════════════
     async deploySelected() {
         if (!this.selectedComponents.length) {
@@ -574,7 +635,6 @@ export default class DeploymentTool extends LightningElement {
             return;
         }
 
-        // Open the modal and fetch the existing branch
         this.isModalLoading     = true;
         this.showCommitModal    = true;
         this.createNewBranch    = false;
@@ -586,7 +646,6 @@ export default class DeploymentTool extends LightningElement {
             });
             this.existingBranchName = existingBranch || null;
         } catch (e) {
-            //Keep the modal open even if an error occurs
             console.error('Could not fetch existing branch:', e);
             this.existingBranchName = null;
         } finally {
@@ -595,14 +654,14 @@ export default class DeploymentTool extends LightningElement {
     }
 
     // ══════════════════════════════════════════════════════════
-    // ✅ NEW — Toggle handler: "Create New Branch" switch
+    // Toggle handler: "Create New Branch" switch
     // ══════════════════════════════════════════════════════════
     handleNewBranchToggle(event) {
         this.createNewBranch = event.detail.checked;
     }
 
     // ══════════════════════════════════════════════════════════
-    // ✅ NEW — Modal Cancel
+    // Modal Cancel
     // ══════════════════════════════════════════════════════════
     handleModalCancel() {
         this.showCommitModal    = false;
@@ -612,7 +671,7 @@ export default class DeploymentTool extends LightningElement {
     }
 
     // ══════════════════════════════════════════════════════════
-    // ✅ NEW — Modal Confirm → Actual Deploy Flow
+    // Modal Confirm → Actual Deploy Flow
     // ══════════════════════════════════════════════════════════
     async handleModalConfirm() {
         this.showCommitModal = false;
@@ -680,25 +739,21 @@ export default class DeploymentTool extends LightningElement {
                 return f;
             });
 
-            // ── Step 2: Branch setup — New branch ya existing? ────────
+            // ── Step 2: Branch setup ──────────────────────────────────
             this.updateProgress('Step 2/3 — Setting up GitHub branch...', 35);
             let branchName;
 
             if (this.createNewBranch && this.existingBranchName) {
-                // ✅ Delete the old branch and close open PRs
                 this.updateProgress('Deleting existing branch & closing open PRs...', 38);
                 await deleteFeatureBranchAndClosePR({
                     branchName  : this.existingBranchName,
                     userStoryId : this.userStoryId
                 });
-                // Now create a new branch
                 this.updateProgress('Creating new branch...', 42);
                 branchName = await this.setupGitBranch();
             } else if (!this.existingBranchName) {
-                // First-time deployment — create a new branch
                 branchName = await this.setupGitBranch();
             } else {
-                // Commit directly to the existing branch
                 branchName = this.existingBranchName;
             }
 
