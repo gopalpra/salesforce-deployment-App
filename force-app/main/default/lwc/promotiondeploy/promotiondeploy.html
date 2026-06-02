@@ -1,0 +1,104 @@
+<template>
+    <lightning-card title="🚀 Promotion Deploy" icon-name="standard:approval">
+        <div class="slds-p-around_medium">
+
+            <template if:true={isLoading}>
+                <div style="text-align:center; padding:1rem;">
+                    <lightning-spinner alternative-text="Loading..." size="small"></lightning-spinner>
+                </div>
+            </template>
+
+            <template if:false={isLoading}>
+
+                <!-- Promotion Details -->
+                <template if:true={promotionLoaded}>
+
+                    <!-- Status Badge -->
+                    <div class="slds-m-bottom_medium" style="text-align:center;">
+                        <span class={statusBadgeClass} style="font-size:14px; padding:6px 16px; border-radius:20px;">
+                            {promotionStatus}
+                        </span>
+                    </div>
+
+                    <!-- Info Grid -->
+                    <div class="slds-grid slds-wrap slds-gutters slds-m-bottom_medium">
+                        <div class="slds-col slds-size_1-of-2 slds-m-bottom_small">
+                            <p class="slds-text-body_small slds-text-color_weak">Feature Branch</p>
+                            <p class="slds-text-body_regular" style="font-weight:500; font-size:12px;">{featureBranch}</p>
+                        </div>
+                        <div class="slds-col slds-size_1-of-2 slds-m-bottom_small">
+                            <p class="slds-text-body_small slds-text-color_weak">Components</p>
+                            <p class="slds-text-body_regular" style="font-weight:500;">{totalComponents}</p>
+                        </div>
+                        <div class="slds-col slds-size_1-of-2 slds-m-bottom_small">
+                            <p class="slds-text-body_small slds-text-color_weak">Validated By</p>
+                            <p class="slds-text-body_regular" style="font-weight:500; font-size:12px;">{validatedBy}</p>
+                        </div>
+                        <div class="slds-col slds-size_1-of-2 slds-m-bottom_small">
+                            <p class="slds-text-body_small slds-text-color_weak">Validated At</p>
+                            <p class="slds-text-body_regular" style="font-weight:500; font-size:12px;">{validatedAt}</p>
+                        </div>
+                        <template if:true={promotionBranch}>
+                            <div class="slds-col slds-size_1-of-1 slds-m-bottom_small">
+                                <p class="slds-text-body_small slds-text-color_weak">Promotion Branch</p>
+                                <p class="slds-text-body_regular" style="font-weight:500; font-size:12px; color:#2e844a;">{promotionBranch}</p>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Deploying State -->
+                    <template if:true={isDeploying}>
+                        <div style="text-align:center; padding:1.5rem 0;">
+                            <lightning-spinner alternative-text="Deploying..." size="medium"></lightning-spinner>
+                            <p class="slds-text-heading_small slds-m-top_medium">{deployStatusLabel}</p>
+                        </div>
+                    </template>
+
+                    <!-- Deploy Button -->
+                    <template if:false={isDeploying}>
+
+                        <!-- Error -->
+                        <template if:true={errorMessage}>
+                            <div style="background:#fff5f5; border:1px solid #fcc; border-radius:6px;
+                                        padding:12px 16px; margin-bottom:16px;">
+                                <div class="slds-grid slds-grid_vertical-align-start" style="gap:8px;">
+                                    <lightning-icon icon-name="utility:error" size="x-small" style="color:#c23934;"></lightning-icon>
+                                    <p class="slds-text-body_small" style="color:#c23934;">{errorMessage}</p>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Success -->
+                        <template if:true={isDeployed}>
+                            <div style="background:#eaf5ea; border:1px solid #2e844a; border-radius:6px;
+                                        padding:16px; text-align:center;">
+                                <lightning-icon icon-name="utility:success" size="medium" style="color:#2e844a;"></lightning-icon>
+                                <p class="slds-text-heading_small slds-m-top_small" style="color:#2e844a;">
+                                    Promotion Branch Created!
+                                </p>
+                                <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                    {promotionBranch}
+                                </p>
+                            </div>
+                        </template>
+
+                        <!-- Deploy Button — only when Validated -->
+                        <template if:true={canDeploy}>
+                            <div style="text-align:center; padding:8px 0;">
+                                <lightning-button
+                                    label="🚀 Deploy (Create Promotion Branch)"
+                                    variant="success"
+                                    onclick={handleDeploy}>
+                                </lightning-button>
+                            </div>
+                        </template>
+
+                    </template>
+
+                </template>
+
+            </template>
+
+        </div>
+    </lightning-card>
+</template>

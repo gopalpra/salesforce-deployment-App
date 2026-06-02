@@ -1,0 +1,102 @@
+<template>
+    <lightning-card title="🔍 Validate for Promotion" icon-name="standard:approval">
+
+        <!-- Loading Org Details -->
+        <template if:true={isInitializing}>
+            <div class="slds-p-around_medium" style="text-align:center;">
+                <lightning-spinner alternative-text="Loading..." size="small"></lightning-spinner>
+                <p class="slds-text-body_small slds-text-color_weak slds-m-top_small">Loading...</p>
+            </div>
+        </template>
+
+        <template if:false={isInitializing}>
+            <div class="slds-p-around_medium">
+
+                <!-- No Active Commit -->
+                <template if:false={hasActiveCommit}>
+                    <div style="background:#f3f2f2; border-radius:6px; padding:16px; text-align:center;">
+                        <lightning-icon icon-name="utility:info" size="small" class="slds-m-bottom_small"></lightning-icon>
+                        <p class="slds-text-body_regular slds-text-color_weak">
+                            No active commit found for this User Story.
+                        </p>
+                        <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                            Please deploy components first using the Deployment Tool.
+                        </p>
+                    </div>
+                </template>
+
+                <!-- Active Commit Found -->
+                <template if:true={hasActiveCommit}>
+
+                    <!-- Commit Info Banner -->
+                    <div style="background:#e8f4fd; border:1px solid #0070d2; border-radius:6px;
+                                padding:12px 16px; margin-bottom:16px;">
+                        <div class="slds-grid slds-grid_vertical-align-center" style="gap:8px;">
+                            <lightning-icon icon-name="utility:branch_merge" size="x-small" style="color:#0070d2;"></lightning-icon>
+                            <div>
+                                <p class="slds-text-body_small" style="font-weight:600; color:#0070d2;">
+                                    Active Branch: {activeCommitBranch}
+                                </p>
+                                <p class="slds-text-body_small slds-text-color_weak">
+                                    {activeCommitMessage}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Validating State -->
+                    <template if:true={isValidating}>
+                        <div style="text-align:center; padding:1.5rem 0;">
+                            <lightning-spinner alternative-text="Validating..." size="medium"></lightning-spinner>
+                            <p class="slds-text-heading_small slds-m-top_medium">{validationStatusLabel}</p>
+                            <template if:true={showComponentProgress}>
+                                <p class="slds-text-body_small slds-text-color_weak slds-m-top_small">
+                                    {componentsDone} / {componentsTotal} components
+                                </p>
+                                <div class="slds-m-top_small slds-m-horizontal_large">
+                                    <lightning-progress-bar value={validationProgressValue} size="large"></lightning-progress-bar>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Idle / Error State -->
+                    <template if:false={isValidating}>
+
+                        <!-- Error Message -->
+                        <template if:true={errorMessage}>
+                            <div style="background:#fff5f5; border:1px solid #fcc; border-radius:6px;
+                                        padding:12px 16px; margin-bottom:16px;">
+                                <div class="slds-grid slds-grid_vertical-align-start" style="gap:8px;">
+                                    <lightning-icon icon-name="utility:error" size="x-small" style="color:#c23934; flex-shrink:0;"></lightning-icon>
+                                    <p class="slds-text-body_small" style="color:#c23934;">{errorMessage}</p>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Validate Button -->
+                        <div style="text-align:center; padding:8px 0;">
+                            <lightning-button
+                                label="🔍 Validate for Promotion"
+                                variant="brand"
+                                disabled={isLoading}
+                                onclick={handleValidate}>
+                            </lightning-button>
+                        </div>
+
+                    </template>
+
+                </template>
+
+                <!-- Status Message -->
+                <template if:true={statusMessage}>
+                    <div class="slds-m-top_small">
+                        <p class={statusClass} style="font-size:13px;"><strong>{statusMessage}</strong></p>
+                    </div>
+                </template>
+
+            </div>
+        </template>
+
+    </lightning-card>
+</template>
